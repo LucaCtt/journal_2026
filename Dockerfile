@@ -1,16 +1,5 @@
-FROM pytorch/pytorch:2.10.0-cuda12.6-cudnn9-runtime
-
-# The uv installer requires curl (and certificates) to download the release archive
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
-
-# Download the latest uv installer
-ADD https://astral.sh/uv/install.sh /uv-installer.sh
-
-# Run uv the installer then remove it
-RUN sh /uv-installer.sh && rm /uv-installer.sh
-
-# Ensure the installed binary is on the `PATH`
-ENV PATH="/root/.local/bin/:$PATH"
+# Pull the uv image to avoid an additional download step
+FROM ghcr.io/astral-sh/uv:0.9.30-python3.13-trixie-slim
 
 WORKDIR /app
 
