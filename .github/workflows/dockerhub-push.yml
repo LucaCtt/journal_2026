@@ -3,8 +3,8 @@ name: Publish Docker image
 on:
   push:
     paths:
-      - "src/**/trial.py"
-      - "Dockerfile"
+      - "./src/**/trial.py"
+      - "./Dockerfile"
 
 jobs:
   push_to_registry:
