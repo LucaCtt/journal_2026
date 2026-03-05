@@ -1,7 +1,13 @@
 # Pull the uv image to avoid an additional download step
 FROM ghcr.io/astral-sh/uv:0.9.30-python3.13-trixie-slim
 
+# Create a non-root user to run the application
+RUN useradd --create-home appuser
+
 WORKDIR /app
+
+# Make the venv available without uv run
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy the lock files first to leverage Docker cache
 COPY pyproject.toml uv.lock ./
@@ -20,4 +26,7 @@ COPY README.md .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
-ENTRYPOINT ["uv", "run", "python", "src/journal_2026/trial.py"]
+# Switch to non-root after install
+USER appuser
+
+ENTRYPOINT ["python", "src/journal_2026/trial.py"]
