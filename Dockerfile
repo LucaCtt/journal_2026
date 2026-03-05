@@ -7,6 +7,6 @@ RUN pip install --no-cache-dir \
     optuna \
     psycopg2-binary
 
-COPY trial.py .
+COPY src/journal_2026/trial.py .
 
 CMD ["python", "trial.py"]
