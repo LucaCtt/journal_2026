@@ -171,12 +171,16 @@ name = "journal-2026"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "boto3" },
     { name = "optuna" },
-    { name = "pydantic-settings" },
-    { name = "rich" },
     { name = "torch" },
     { name = "torchvision" },
+]
+
+[package.optional-dependencies]
+launcher = [
+    { name = "boto3" },
+    { name = "pydantic-settings" },
+    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -186,13 +190,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.42.60" },
+    { name = "boto3", marker = "extra == 'launcher'", specifier = ">=1.42.60" },
     { name = "optuna", specifier = ">=4.7.0" },
-    { name = "pydantic-settings", specifier = ">=2.13.1" },
-    { name = "rich", specifier = ">=14.3.3" },
+    { name = "pydantic-settings", marker = "extra == 'launcher'", specifier = ">=2.13.1" },
+    { name = "rich", marker = "extra == 'launcher'", specifier = ">=14.3.3" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchvision", specifier = ">=0.25.0" },
 ]
+provides-extras = ["launcher"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.15.4" }]
