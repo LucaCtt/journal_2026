@@ -1,0 +1,46 @@
+[project]
+name = "journal-2026"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.42.60",
+    "optuna>=4.7.0",
+    "pydantic-settings>=2.13.1",
+    "rich>=14.3.3",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.4",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "ALL", # include all the rules, including new ones
+]
+ignore = [
+    "D100",    # Missing docstring in public module
+    "D104",    # Missing docstring in public package
+    "D105",    # Missing docstring in magic method
+    "FBT001",  # Boolean-typed positional argument in function definition
+    "FBT002",  # Boolean-typed keyword argument in function definition
+    "FBT003",  # Boolean-typed variable annotation
+    "D203",    # Incorrect blank line before class
+    "D213",    # Multi line summary second line
+    "PLR0913", # Too many arguments in function definition
+    "TC001",
+    "TC002",
+    "TC003",
+]
