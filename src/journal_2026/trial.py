@@ -192,7 +192,7 @@ def objective(trial: optuna.Trial) -> float:
     ae = Autoencoder(latent_dim).to(DEVICE)
     clf = Classifier(latent_dim, clf_hidden).to(DEVICE)
 
-    train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=ae_lr), 10)
+    train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=ae_lr), 15)
     train_classifier(ae, clf, train_loader, optim.Adam(clf.parameters(), lr=clf_lr), 10)
 
     return evaluate(ae, clf, test_loader)
