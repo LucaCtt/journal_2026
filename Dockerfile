@@ -36,4 +36,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Switch to non-root after install
 USER appuser
 
-ENTRYPOINT ["python", "src/journal_2026/trial.py"]
+ENTRYPOINT ["python", "src/journal_2026/trial/trial.py"]

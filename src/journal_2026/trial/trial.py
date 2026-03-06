@@ -1,18 +1,23 @@
-import os
+import json
 
-import optuna
+import boto3
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
-# Hyperparams come from env vars set by the launcher
-STORAGE = os.environ["OPTUNA_STORAGE"]
-STUDY_NAME = os.environ["OPTUNA_STUDY"]
-TRIAL_ID = int(os.environ["OPTUNA_TRIAL_ID"])
+from journal_2026.trial.trial_settings import TrialSettings
+
+settings = TrialSettings()
 
 DEVICE = torch.device("cuda")
 DATA_DIR = "/tmp/mnist"  # noqa: S108
+
+
+class TrialParams:
+    """Parameters for a trial, loaded from environment variables or .env file."""
+
+    lr: float = settings.param_lr
 
 
 class Autoencoder(nn.Module):
@@ -175,30 +180,36 @@ def evaluate(
     return correct / total
 
 
-def objective(trial: optuna.Trial) -> float:
-    """Optuna objective function to optimize."""
-    latent_dim = trial.suggest_int("latent_dim", 8, 128)
-    ae_lr = trial.suggest_float("ae_lr", 1e-4, 1e-2, log=True)
-    clf_lr = trial.suggest_float("clf_lr", 1e-4, 1e-2, log=True)
-    clf_hidden = trial.suggest_categorical("clf_hidden", [64, 128, 256])
-    batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
-
+def run_trial(params: TrialParams) -> float:
+    """Run a single trial of training and evaluating the autoencoder and classifier."""
     tf = transforms.ToTensor()
     train_ds = datasets.MNIST(DATA_DIR, train=True, download=True, transform=tf)
     test_ds = datasets.MNIST(DATA_DIR, train=False, download=True, transform=tf)
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
+    train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_ds, batch_size=256, shuffle=False, num_workers=2)
 
-    ae = Autoencoder(latent_dim).to(DEVICE)
-    clf = Classifier(latent_dim, clf_hidden).to(DEVICE)
+    ae = Autoencoder(128).to(DEVICE)
+    clf = Classifier(128, 128).to(DEVICE)
 
-    train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=ae_lr), 15)
-    train_classifier(ae, clf, train_loader, optim.Adam(clf.parameters(), lr=clf_lr), 10)
+    train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=params.lr), 10)
+    train_classifier(ae, clf, train_loader, optim.Adam(clf.parameters(), lr=params.lr), 10)
 
     return evaluate(ae, clf, test_loader)
 
 
 if __name__ == "__main__":
-    study = optuna.load_study(study_name=STUDY_NAME, storage=STORAGE)
-    # Tell Optuna to run exactly the trial that was pre-created by the launcher
-    study.optimize(objective, n_trials=1)
+    params = TrialParams()
+    accuracy = run_trial(params)
+
+    sqs = boto3.client("sqs")
+    sqs.send_message(
+        QueueUrl=settings.queue_url,
+        MessageBody=json.dumps(
+            {
+                "study_name": settings.study_name,
+                "trial_id": settings.study_trial_id,
+                "params": params,
+                "accuracy": accuracy,
+            },
+        ),
+    )

@@ -171,14 +171,14 @@ name = "journal-2026"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "optuna" },
+    { name = "boto3" },
     { name = "torch" },
     { name = "torchvision" },
 ]
 
 [package.optional-dependencies]
 launcher = [
-    { name = "boto3" },
+    { name = "optuna" },
     { name = "pydantic-settings" },
     { name = "rich" },
 ]
@@ -190,8 +190,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", marker = "extra == 'launcher'", specifier = ">=1.42.60" },
-    { name = "optuna", specifier = ">=4.7.0" },
+    { name = "boto3", specifier = ">=1.42.60" },
+    { name = "optuna", marker = "extra == 'launcher'", specifier = ">=4.7.0" },
     { name = "pydantic-settings", marker = "extra == 'launcher'", specifier = ">=2.13.1" },
     { name = "rich", marker = "extra == 'launcher'", specifier = ">=14.3.3" },
     { name = "torch", specifier = ">=2.10.0" },

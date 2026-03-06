@@ -1,14 +1,17 @@
+import json
 import logging
 import time
 
 import boto3
 import optuna
 from botocore.client import BaseClient
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 from rich.logging import RichHandler
 
-from journal_2026.settings import Settings
+from journal_2026.launcher_settings import LauncherSettings
 
-settings = Settings()
+settings = LauncherSettings()
 
 # Logging config
 handler = RichHandler(level=logging.INFO, show_path=False)
@@ -20,88 +23,112 @@ optuna.logging.enable_propagation()
 optuna.logging.disable_default_handler()
 
 
-def _submit_trial(
-    batch: BaseClient,
-    job_queue: str,
-    job_def: str,
-    study_name: str,
-    storage: str,
-    trial_id: int,
-) -> str:
+def _submit_trial(batch: BaseClient, trial: optuna.Trial, queue_url: str) -> None:
     """Submit a single Batch job for one Optuna trial."""
+    lr = trial.suggest_float("lr", settings.param_lr_min, settings.param_lr_max, log=True)
+
     response = batch.submit_job(
-        jobName=f"{study_name}-trial-{trial_id}",
-        jobQueue=job_queue,
-        jobDefinition=job_def,
+        jobName=f"{settings.study_name}-trial-{trial.number}",
+        jobQueue=settings.aws_job_queue,
+        jobDefinition=settings.aws_job_def,
         containerOverrides={
             "environment": [
-                {"name": "OPTUNA_STORAGE", "value": storage},
-                {"name": "OPTUNA_STUDY", "value": study_name},
-                {"name": "OPTUNA_TRIAL_ID", "value": str(trial_id)},
+                {"name": "STUDY_NAME", "value": settings.study_name},
+                {"name": "STUDY_TRIAL_ID", "value": str(trial.number)},
+                {"name": "PARAM_LR", "value": str(lr)},
+                {"name": "QUEUE_URL", "value": queue_url},
             ],
         },
     )
+
     job_id = response["jobId"]
-    logger.info("Submitted trial %d → Batch job %d", trial_id, job_id)
-    return job_id
+    logger.info("Submitted trial %d → Batch job %d", trial.number, job_id)
 
 
-def _wait_for_jobs(batch: BaseClient, job_ids: list[str], poll_interval: int) -> None:
+def _collect_results(
+    sqs: BaseClient,
+    queue_url: str,
+    trial_ids: list[int],
+    poll_interval: int,
+) -> list[tuple[int, float | None]]:
     """Poll until all jobs reach a terminal state."""
-    pending = set(job_ids)
+    remaining_trials = set(trial_ids)
+    results = []
 
-    while pending:
+    while remaining_trials:
         time.sleep(poll_interval)
 
-        # describe_jobs accepts up to 100 IDs at once
-        chunks = [list(pending)[i : i + 100] for i in range(0, len(pending), 100)]
-        for chunk in chunks:
-            resp = batch.describe_jobs(jobs=chunk)
+        # Check SQS for completed jobs
+        resp = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10)
+        messages = resp.get("Messages", [])
+        for msg in messages:
+            body = json.loads(msg["Body"])
+            trial_id = body["trialId"]
+            if trial_id in remaining_trials:
+                status = body["status"]
+                accuracy = body["accuracy"] if status == "SUCCEEDED" else None
 
-            for job in resp["jobs"]:
-                status = job["status"]
-                jid = job["jobId"]
-                if status in ("SUCCEEDED", "FAILED"):
-                    logger.info("Batch job %d → %s", jid, status)
-                    pending.discard(jid)
+                if status == "SUCCEEDED":
+                    logger.info("Trial %d completed successfully.", trial_id)
+                else:
+                    logger.info("Trial %d failed during execution.", trial_id)
+
+                results.append((trial_id, accuracy))
+                remaining_trials.remove(trial_id)
+
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=msg["ReceiptHandle"])
+
+    return results
 
 
 def main() -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
     study = optuna.create_study(
         study_name=settings.study_name,
-        storage=settings.study_db_url,
+        storage=JournalStorage(JournalFileBackend(settings.study_journal_path)),
         direction="maximize",  # Maximize validation accuracy
     )
 
     batch = boto3.client("batch", region_name=settings.aws_region)
-    job_ids = []
+    sqs = boto3.client("sqs", region_name=settings.aws_region)
+    queue_url = sqs.create_queue(QueueName=settings.study_name)["QueueUrl"]
 
-    for _ in range(settings.study_n_trials):
-        # Ask Optuna to create a trial (assigns a trial_id and samples params)
-        trial = study.ask()
-        logger.info("Submitting trial %d with params: %s", trial.number, trial.params)
+    try:
+        for i in range(settings.n_batches):
+            logger.info("Starting batch %d/%d.", i + 1, settings.n_batches)
 
-        job_id = _submit_trial(
-            batch,
-            settings.aws_job_queue,
-            settings.aws_job_def,
-            settings.study_name,
-            settings.study_db_url,
-            trial.number,
-        )
-        job_ids.append(job_id)
+            pending_trials: dict[int, optuna.Trial] = {}
 
-    logger.info("All %d trials submitted, waiting for completion...", len(job_ids))
-    _wait_for_jobs(batch, job_ids, settings.study_poll_interval)
+            for _ in range(settings.study_batch_size):
+                # Ask Optuna to create a trial (assigns a trial_id and samples params)
+                trial = study.ask()
+                logger.info("Submitting trial %d with params: %s", trial.number, trial.params)
 
-    # Print final results
-    study = optuna.load_study(study_name=settings.study_name, storage=settings.study_db_url)
-    best = study.best_trial
+                _submit_trial(batch, trial, queue_url)
+                pending_trials[trial.number] = trial
 
-    logger.info("All trials completed.")
-    logger.info("Best trial: #%d  accuracy=%.4f", best.number, best.value)
-    logger.info("Params: %s", best.params)
+            logger.info("Batch submitted, waiting for completion...")
+            results = _collect_results(
+                sqs,
+                queue_url,
+                [trial.number for trial in pending_trials.values()],
+                settings.study_poll_interval,
+            )
+            for trial_id, accuracy in results:
+                trial = pending_trials[trial_id]
+                if accuracy is not None:
+                    study.tell(trial, values=accuracy)
+                else:
+                    study.tell(trial, state=optuna.trial.TrialState.FAIL)
+
+        # Print final results
+        best = study.best_trial
+
+        logger.info("All trials completed.")
+        logger.info("Best trial: #%d  accuracy=%.4f", best.number, best.value)
+        logger.info("Params: %s", best.params)
+    finally:
+        sqs.delete_queue(QueueUrl=queue_url)
 
 
 if __name__ == "__main__":
