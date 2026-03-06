@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 
 import boto3
 import torch
@@ -10,10 +11,10 @@ from journal_2026.trial.trial_settings import TrialSettings
 
 settings = TrialSettings()
 
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATA_DIR = "/tmp/mnist"  # noqa: S108
 
-
+@dataclass
 class TrialParams:
     """Parameters for a trial, loaded from environment variables or .env file."""
 
@@ -208,8 +209,9 @@ if __name__ == "__main__":
             {
                 "study_name": settings.study_name,
                 "trial_id": settings.study_trial_id,
-                "params": params,
+                "params": params.__dict__,
                 "accuracy": accuracy,
+                "status": "SUCCEEDED",
             },
         ),
     )
