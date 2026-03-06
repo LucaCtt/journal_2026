@@ -7,7 +7,7 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
-from journal_2026.trial.trial_settings import TrialSettings
+from csi_vae.trial.trial_settings import TrialSettings
 
 settings = TrialSettings()
 

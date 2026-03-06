@@ -9,7 +9,7 @@ from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 from rich.logging import RichHandler
 
-from journal_2026.launcher_settings import LauncherSettings
+from csi_vae.launcher_settings import LauncherSettings
 
 settings = LauncherSettings()
 
