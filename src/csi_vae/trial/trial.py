@@ -6,6 +6,8 @@ from torchvision import datasets, transforms
 from csi_vae.messages_queue import MessagesQueue
 from csi_vae.trial.trial_settings import TrialSettings
 
+torch.set_float32_matmul_precision("high")
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATA_DIR = "/tmp/mnist"  # noqa: S108
 
