@@ -4,20 +4,25 @@ from pydantic_settings import BaseSettings
 class LauncherSettings(BaseSettings):
     """Application settings, loaded from environment variables or .env file."""
 
-    study_name = "default"
-    study_journal_path = f"out/{study_name}/study.log"
-    study_n_trials = 10
-    study_batch_size = 2
-    study_poll_interval = 30
+    study_name: str = "default"
+    """Name of the Optuna study."""
+    journal_path: str = f"out/{study_name}/study.log"
+    """Path to the Optuna journal file for this study."""
+    n_trials: int = 10
+    """Total number of Optuna trials to run."""
+    trials_batch_size: int = 2
+    """Number of trials to submit in each batch to AWS Batch."""
+    poll_interval: int = 30
+    """Seconds to wait between polling AWS Batch for job status."""
+    aws_job_queue: str = "csi_vae_job_queue"
+    """Name of the AWS Batch job queue to submit trials to."""
+    aws_job_definition: str = "csi_vae_job_def"
+    """Name of the AWS Batch job definition to use."""
 
-    param_lr_min = 1e-4
-    param_lr_max = 1e-2
-
-    aws_region = "us-east-1"
-    aws_job_queue = "csi_vae_job_queue"
-    aws_job_def = "csi_vae_job_def:1"
+    param_lr_min: float = 1e-4
+    param_lr_max: float = 1e-2
 
     @property
     def n_batches(self) -> int:
         """Calculate how many batches of jobs to submit based on total trials and batch size."""
-        return (self.study_n_trials + self.study_batch_size - 1) // self.study_batch_size
+        return (self.n_trials + self.trials_batch_size - 1) // self.trials_batch_size

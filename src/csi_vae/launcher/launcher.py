@@ -1,18 +1,15 @@
 import logging
 import time
 
-import boto3
 import optuna
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 from rich.logging import RichHandler
 
 from csi_vae.launcher.launcher_settings import LauncherSettings
-from csi_vae.queue import SQSTrialMessagesQueue, TrialMessagesQueue
-from csi_vae.submitter import AWSBatchTrialJobSubmitter, TrialJobSubmitter
+from csi_vae.messages_queue import MessagesQueue
 from csi_vae.trial.trial_settings import TrialSettings
-
-settings = LauncherSettings()
+from csi_vae.trial_submitter import TrialSubmitter
 
 # Logging config
 handler = RichHandler(level=logging.INFO, show_path=False)
@@ -24,15 +21,14 @@ optuna.logging.enable_propagation()
 optuna.logging.disable_default_handler()
 
 
-def _submit_trial(submitter: TrialJobSubmitter, trial: optuna.Trial, queue_url: str) -> None:
+def _submit_trial(submitter: TrialSubmitter, trial: optuna.Trial, queue_url: str) -> None:
     """Submit a single Batch job for one Optuna trial."""
     lr = trial.suggest_float("lr", settings.param_lr_min, settings.param_lr_max, log=True)
 
     job_id = submitter.submit(
-        f"{settings.study_name}-trial-{trial.number}",
         TrialSettings(
             study_name=settings.study_name,
-            study_trial_id=trial.number,
+            trial_number=trial.number,
             param_lr=lr,
             queue_url=queue_url,
         ),
@@ -41,7 +37,7 @@ def _submit_trial(submitter: TrialJobSubmitter, trial: optuna.Trial, queue_url: 
 
 
 def _collect_results(
-    queue: TrialMessagesQueue,
+    queue: MessagesQueue,
     trial_ids: list[int],
     poll_interval: int,
 ) -> list[tuple[int, float | None]]:
@@ -71,11 +67,11 @@ def _collect_results(
     return results
 
 
-def run_study(submitter: TrialJobSubmitter, queue: TrialMessagesQueue) -> None:
+def run_study(submitter: TrialSubmitter, queue: MessagesQueue) -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
     study = optuna.create_study(
         study_name=settings.study_name,
-        storage=JournalStorage(JournalFileBackend(settings.study_journal_path)),
+        storage=JournalStorage(JournalFileBackend(settings.journal_path)),
         direction="maximize",  # Maximize validation accuracy
     )
 
@@ -84,7 +80,7 @@ def run_study(submitter: TrialJobSubmitter, queue: TrialMessagesQueue) -> None:
 
         pending_trials: dict[int, optuna.Trial] = {}
 
-        for _ in range(settings.study_batch_size):
+        for _ in range(settings.trials_batch_size):
             # Ask Optuna to create a trial (assigns a trial_id and samples params)
             trial = study.ask()
             pending_trials[trial.number] = trial
@@ -96,7 +92,7 @@ def run_study(submitter: TrialJobSubmitter, queue: TrialMessagesQueue) -> None:
         results = _collect_results(
             queue,
             list(pending_trials.keys()),
-            settings.study_poll_interval,
+            settings.poll_interval,
         )
         for trial_id, accuracy in results:
             trial = pending_trials[trial_id]
@@ -113,20 +109,19 @@ def run_study(submitter: TrialJobSubmitter, queue: TrialMessagesQueue) -> None:
     logger.info("Params: %s", best.params)
 
 
-def main() -> None:
+def run_launcher(settings: LauncherSettings) -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
-    batch = boto3.client("batch", region_name=settings.aws_region)
-    submitter = AWSBatchTrialJobSubmitter(batch, settings.aws_job_queue, settings.aws_job_def)
-
-    sqs = boto3.client("sqs", region_name=settings.aws_region)
-    queue_url = sqs.create_queue(QueueName=settings.study_name)["QueueUrl"]
-    queue = SQSTrialMessagesQueue(sqs, queue_url)
+    submitter = TrialSubmitter(settings.aws_job_queue, settings.aws_job_definition)
+    queue = MessagesQueue()
+    queue.create(settings.study_name)
 
     try:
         run_study(submitter, queue)
     finally:
-        sqs.delete_queue(QueueUrl=queue_url)
+        queue.destroy()
 
 
 if __name__ == "__main__":
-    main()
+    settings = LauncherSettings()
+
+    run_launcher(settings)

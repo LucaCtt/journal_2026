@@ -1,24 +1,13 @@
-import json
-from dataclasses import dataclass
-
-import boto3
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+from csi_vae.messages_queue import MessagesQueue
 from csi_vae.trial.trial_settings import TrialSettings
-
-settings = TrialSettings()
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATA_DIR = "/tmp/mnist"  # noqa: S108
-
-@dataclass
-class TrialParams:
-    """Parameters for a trial, loaded from environment variables or .env file."""
-
-    lr: float = settings.param_lr
 
 
 class Autoencoder(nn.Module):
@@ -181,7 +170,7 @@ def evaluate(
     return correct / total
 
 
-def run_trial(params: TrialParams) -> float:
+def run_trial(settings: TrialSettings, queue: MessagesQueue) -> None:
     """Run a single trial of training and evaluating the autoencoder and classifier."""
     tf = transforms.ToTensor()
     train_ds = datasets.MNIST(DATA_DIR, train=True, download=True, transform=tf)
@@ -192,26 +181,29 @@ def run_trial(params: TrialParams) -> float:
     ae = Autoencoder(128).to(DEVICE)
     clf = Classifier(128, 128).to(DEVICE)
 
-    train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=params.lr), 10)
-    train_classifier(ae, clf, train_loader, optim.Adam(clf.parameters(), lr=params.lr), 10)
+    train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=settings.param_lr), 10)
+    train_classifier(ae, clf, train_loader, optim.Adam(clf.parameters(), lr=settings.param_lr), 10)
 
-    return evaluate(ae, clf, test_loader)
+    accuracy = evaluate(ae, clf, test_loader)
+
+    queue.push(
+        {
+            "study_name": settings.study_name,
+            "trial_id": settings.trial_number,
+            "params": settings.model_dump(),
+            "accuracy": accuracy,
+            "status": "SUCCEEDED",
+        },
+    )
 
 
 if __name__ == "__main__":
-    params = TrialParams()
-    accuracy = run_trial(params)
+    settings = TrialSettings()
 
-    sqs = boto3.client("sqs")
-    sqs.send_message(
-        QueueUrl=settings.queue_url,
-        MessageBody=json.dumps(
-            {
-                "study_name": settings.study_name,
-                "trial_id": settings.study_trial_id,
-                "params": params.__dict__,
-                "accuracy": accuracy,
-                "status": "SUCCEEDED",
-            },
-        ),
-    )
+    if settings.queue_url is None:
+        msg = "Queue URL must be provided via environment variable."
+        raise ValueError(msg)
+
+    queue = MessagesQueue.from_url(settings.queue_url)
+
+    run_trial(settings, queue)
