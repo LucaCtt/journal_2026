@@ -23,21 +23,27 @@ optuna.logging.disable_default_handler()
 
 def _collect_results(
     queue: MessagesQueue,
-    trial_ids: list[int],
+    pending_trials: list[int],
     poll_interval: int,
+    timeout: int = 3600,
 ) -> list[tuple[int, float | None]]:
     """Poll until all jobs reach a terminal state."""
-    remaining_trials = set(trial_ids)
+    remaining_trials = set(pending_trials)
     results = []
+    start_time = time.time()
 
     while remaining_trials:
+        if time.time() - start_time > timeout:
+            msg = "Timeout reached while waiting for trial results."
+            raise TimeoutError(msg)
+
         time.sleep(poll_interval)
 
         # Check the queue for completed jobs
         messages = queue.pop(max_messages=10)
         for msg in messages:
             trial_id = msg.get("trial_id", None)
-            if trial_id and trial_id in remaining_trials:
+            if trial_id is not None and trial_id in remaining_trials:
                 status = msg.get("status", None)
                 accuracy = msg.get("accuracy", None) if status == "SUCCEEDED" else None
 
@@ -56,7 +62,7 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
     """Create Optuna study, submit Batch jobs, and wait for results."""
     study = optuna.create_study(
         study_name=settings.study_name,
-        storage=JournalStorage(JournalFileBackend(settings.journal_path)),
+        storage=JournalStorage(JournalFileBackend(settings.journal_path)) if settings.journal_path else None,
         direction="maximize",  # Maximize validation accuracy
     )
 
@@ -95,6 +101,10 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
                 study.tell(trial, values=accuracy)
             else:
                 study.tell(trial, state=optuna.trial.TrialState.FAIL)
+
+    if not any(t.value is not None for t in study.trials):
+        logger.warning("No successful trials were completed.")
+        return
 
     # Print final results
     best = study.best_trial

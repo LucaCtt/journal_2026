@@ -19,6 +19,7 @@ launcher = [
 
 [dependency-groups]
 dev = [
+    "pytest>=9.0.2",
     "ruff>=0.15.4",
 ]
 
@@ -48,4 +49,15 @@ ignore = [
     "TC002",
     "TC003",
     "UP037",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ARG001",  # Unused argument
+    "ARG002",  # Unused method argument
+    "S101",    # Use of assert
+    "ANN",     # Missing type annotations
+    "D",       # Docstrings not needed in tests
+    "SLF001",  # Private member acces
+    "PLR2004", # Magic value comparisons
 ]

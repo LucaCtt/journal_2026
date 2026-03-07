@@ -1,4 +1,3 @@
-
 import boto3
 
 from csi_vae.trial.trial_settings import TrialSettings
@@ -20,8 +19,9 @@ class TrialSubmitter:
             jobQueue=self.__job_queue,
             jobDefinition=self.__job_definition,
             containerOverrides={
-                "environment": [{"name": k, "value": str(v)} for k, v in settings.model_dump().items()],
+                "environment": [
+                    {"name": k, "value": str(v)} for k, v in settings.model_dump().items() if v is not None
+                ],
             },
         )
         return response["jobId"]
-

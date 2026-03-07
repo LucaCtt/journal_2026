@@ -182,7 +182,9 @@ def run_trial(settings: TrialSettings | None = None) -> None:
     test_loader = DataLoader(test_ds, batch_size=256, shuffle=False, num_workers=2)
 
     ae = Autoencoder(128).to(DEVICE)
+    ae.compile()
     clf = Classifier(128, 128).to(DEVICE)
+    clf.compile()
 
     train_autoencoder(ae, train_loader, optim.Adam(ae.parameters(), lr=settings.param_lr), 10)
     train_classifier(ae, clf, train_loader, optim.Adam(clf.parameters(), lr=settings.param_lr), 10)

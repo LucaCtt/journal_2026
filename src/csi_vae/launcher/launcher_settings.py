@@ -6,7 +6,7 @@ class LauncherSettings(BaseSettings):
 
     study_name: str = "default"
     """Name of the Optuna study."""
-    journal_path: str = f"out/{study_name}/study.log"
+    journal_path: str | None = f"out/{study_name}/study.log"
     """Path to the Optuna journal file for this study."""
     n_trials: int = 10
     """Total number of Optuna trials to run."""
