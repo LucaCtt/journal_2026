@@ -170,8 +170,11 @@ def evaluate(
     return correct / total
 
 
-def run_trial(settings: TrialSettings, queue: MessagesQueue) -> None:
+def run_trial(settings: TrialSettings | None = None) -> None:
     """Run a single trial of training and evaluating the autoencoder and classifier."""
+    settings = TrialSettings() if settings is None else settings
+    queue = MessagesQueue.from_url(settings.queue_url) if settings.queue_url else None
+
     tf = transforms.ToTensor()
     train_ds = datasets.MNIST(DATA_DIR, train=True, download=True, transform=tf)
     test_ds = datasets.MNIST(DATA_DIR, train=False, download=True, transform=tf)
@@ -186,24 +189,17 @@ def run_trial(settings: TrialSettings, queue: MessagesQueue) -> None:
 
     accuracy = evaluate(ae, clf, test_loader)
 
-    queue.push(
-        {
-            "study_name": settings.study_name,
-            "trial_id": settings.trial_number,
-            "params": settings.model_dump(),
-            "accuracy": accuracy,
-            "status": "SUCCEEDED",
-        },
-    )
+    if queue:
+        queue.push(
+            {
+                "study_name": settings.study_name,
+                "trial_id": settings.trial_number,
+                "params": settings.model_dump(),
+                "accuracy": accuracy,
+                "status": "SUCCEEDED",
+            },
+        )
 
 
 if __name__ == "__main__":
-    settings = TrialSettings()
-
-    if settings.queue_url is None:
-        msg = "Queue URL must be provided via environment variable."
-        raise ValueError(msg)
-
-    queue = MessagesQueue.from_url(settings.queue_url)
-
-    run_trial(settings, queue)
+    run_trial()

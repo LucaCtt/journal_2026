@@ -21,21 +21,6 @@ optuna.logging.enable_propagation()
 optuna.logging.disable_default_handler()
 
 
-def _submit_trial(submitter: TrialSubmitter, trial: optuna.Trial, queue_url: str) -> None:
-    """Submit a single Batch job for one Optuna trial."""
-    lr = trial.suggest_float("lr", settings.param_lr_min, settings.param_lr_max, log=True)
-
-    job_id = submitter.submit(
-        TrialSettings(
-            study_name=settings.study_name,
-            trial_number=trial.number,
-            param_lr=lr,
-            queue_url=queue_url,
-        ),
-    )
-    logger.info("Submitted trial %d → Batch job %d", trial.number, job_id)
-
-
 def _collect_results(
     queue: MessagesQueue,
     trial_ids: list[int],
@@ -67,7 +52,7 @@ def _collect_results(
     return results
 
 
-def run_study(submitter: TrialSubmitter, queue: MessagesQueue) -> None:
+def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: LauncherSettings) -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
     study = optuna.create_study(
         study_name=settings.study_name,
@@ -86,7 +71,17 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue) -> None:
             pending_trials[trial.number] = trial
             logger.info("Submitting trial %d with params: %s", trial.number, trial.params)
 
-            _submit_trial(submitter, trial, queue.url)
+            lr = trial.suggest_float("lr", settings.param_lr_min, settings.param_lr_max, log=True)
+
+            job_id = submitter.submit(
+                TrialSettings(
+                    study_name=settings.study_name,
+                    trial_number=trial.number,
+                    param_lr=lr,
+                    queue_url=queue.url,
+                ),
+            )
+            logger.info("Submitted trial %d → Batch job %d", trial.number, job_id)
 
         logger.info("Batch submitted, waiting for completion...")
         results = _collect_results(
@@ -109,19 +104,19 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue) -> None:
     logger.info("Params: %s", best.params)
 
 
-def run_launcher(settings: LauncherSettings) -> None:
+def run_launcher(settings: LauncherSettings | None = None) -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
+    settings = LauncherSettings() if settings is None else settings
+
     submitter = TrialSubmitter(settings.aws_job_queue, settings.aws_job_definition)
     queue = MessagesQueue()
     queue.create(settings.study_name)
 
     try:
-        run_study(submitter, queue)
+        run_study(submitter, queue, settings)
     finally:
         queue.destroy()
 
 
 if __name__ == "__main__":
-    settings = LauncherSettings()
-
-    run_launcher(settings)
+    run_launcher()
