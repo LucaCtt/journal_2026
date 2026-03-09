@@ -14,9 +14,9 @@ class LauncherSettings(BaseSettings):
     """Number of trials to submit in each batch to AWS Batch."""
     poll_interval: int = 30
     """Seconds to wait between polling AWS Batch for job status."""
-    aws_job_queue: str = "csi_vae_job_queue"
+    aws_job_queue: str = "CSIVAEJobQueue"
     """Name of the AWS Batch job queue to submit trials to."""
-    aws_job_definition: str = "csi_vae_job_def"
+    aws_job_definition: str = "CSIVAEJobDefinition"
     """Name of the AWS Batch job definition to use."""
 
     param_lr_min: float = 1e-4

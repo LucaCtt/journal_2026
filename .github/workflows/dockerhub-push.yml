@@ -6,9 +6,10 @@ on:
     branches:
       - main
     paths:
-      - "src/**/trial/"
+      - "src/**/trial/*"
+      - "src/messages_queue.py"
       - "Dockerfile"
-    
+      - ".github/workflows/dockerhub-push.yml"
 
 jobs:
   push_to_registry:

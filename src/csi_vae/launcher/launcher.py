@@ -1,9 +1,11 @@
 import logging
 import time
+from pathlib import Path
 
 import optuna
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
+from optuna.trial import TrialState
 from rich.logging import RichHandler
 
 from csi_vae.launcher.launcher_settings import LauncherSettings
@@ -42,6 +44,9 @@ def _collect_results(
         # Check the queue for completed jobs
         messages = queue.pop(max_messages=10)
         for msg in messages:
+            # Reset the timer on each received message to allow for long-running trials
+            start_time = time.time()
+
             trial_id = msg.get("trial_id", None)
             if trial_id is not None and trial_id in remaining_trials:
                 status = msg.get("status", None)
@@ -60,25 +65,47 @@ def _collect_results(
 
 def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: LauncherSettings) -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
+    if settings.journal_path:
+        logger.info("Using journal storage at: %s", settings.journal_path)
+        Path(settings.journal_path).parent.mkdir(parents=True, exist_ok=True)
+
     study = optuna.create_study(
         study_name=settings.study_name,
         storage=JournalStorage(JournalFileBackend(settings.journal_path)) if settings.journal_path else None,
+        load_if_exists=True,
         direction="maximize",  # Maximize validation accuracy
     )
+    # Get any pending trials if the study already exists (e.g. from a previously stopped run)
+    previous_trials = [
+        trial.number for trial in study.trials if trial.state in [TrialState.WAITING, TrialState.RUNNING]
+    ]
+    if previous_trials:
+        logger.info(
+            "Found %d pending trials from previous run: %s, trying to collect results...",
+            len(previous_trials),
+            previous_trials,
+        )
+        results = _collect_results(
+            queue,
+            previous_trials,
+            30,
+        )
+        for trial_id, accuracy in results:
+            study.tell(trial_id, values=TrialState.FAIL if accuracy is None else accuracy)
 
     for i in range(settings.n_batches):
         logger.info("Starting batch %d/%d.", i + 1, settings.n_batches)
 
-        pending_trials: dict[int, optuna.Trial] = {}
+        pending_trials: list[int] = []
 
         for _ in range(settings.trials_batch_size):
             # Ask Optuna to create a trial (assigns a trial_id and samples params)
             trial = study.ask()
-            pending_trials[trial.number] = trial
-            logger.info("Submitting trial %d with params: %s", trial.number, trial.params)
+            pending_trials.append(trial.number)
 
             lr = trial.suggest_float("lr", settings.param_lr_min, settings.param_lr_max, log=True)
 
+            logger.info("Submitting trial %d with params: %s", trial.number, trial.params)
             job_id = submitter.submit(
                 TrialSettings(
                     study_name=settings.study_name,
@@ -87,20 +114,16 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
                     queue_url=queue.url,
                 ),
             )
-            logger.info("Submitted trial %d → Batch job %d", trial.number, job_id)
+            logger.info("Submitted trial %d → Batch job %s", trial.number, job_id)
 
         logger.info("Batch submitted, waiting for completion...")
         results = _collect_results(
             queue,
-            list(pending_trials.keys()),
+            pending_trials,
             settings.poll_interval,
         )
         for trial_id, accuracy in results:
-            trial = pending_trials[trial_id]
-            if accuracy is not None:
-                study.tell(trial, values=accuracy)
-            else:
-                study.tell(trial, state=optuna.trial.TrialState.FAIL)
+            study.tell(trial_id, values=accuracy if accuracy is not None else TrialState.FAIL)
 
     if not any(t.value is not None for t in study.trials):
         logger.warning("No successful trials were completed.")
