@@ -8,8 +8,6 @@ class TrialSettings(BaseSettings):
     """Name of the study to which this trial belongs."""
     trial_number: int = 0
     """Unique identifier for the trial within the study."""
-    queue_type: str = "local"
-    """Type of message queue to use for communication (e.g., SQS or local)."""
     queue_url: str | None = None
     """URL of the SQS message queue, if applicable."""
 

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.42.60",
+    "pydantic-settings>=2.13.1",
     "torch>=2.10.0",
     "torchvision>=0.25.0",
 ]
@@ -13,7 +14,6 @@ dependencies = [
 [project.optional-dependencies]
 launcher = [
     "optuna>=4.7.0",
-    "pydantic-settings>=2.13.1",
     "rich>=14.3.3",
 ]
 

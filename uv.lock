@@ -80,6 +80,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
+    { name = "pydantic-settings" },
     { name = "torch" },
     { name = "torchvision" },
 ]
@@ -87,7 +88,6 @@ dependencies = [
 [package.optional-dependencies]
 launcher = [
     { name = "optuna" },
-    { name = "pydantic-settings" },
     { name = "rich" },
 ]
 
@@ -101,7 +101,7 @@ dev = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.42.60" },
     { name = "optuna", marker = "extra == 'launcher'", specifier = ">=4.7.0" },
-    { name = "pydantic-settings", marker = "extra == 'launcher'", specifier = ">=2.13.1" },
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "rich", marker = "extra == 'launcher'", specifier = ">=14.3.3" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchvision", specifier = ">=0.25.0" },

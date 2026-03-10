@@ -23,6 +23,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Reuse the installed dependencies in a smaller base image
 FROM python:3.13-slim-trixie
 
+# Install g++ for torch compile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create a non-root user to run the application
 RUN useradd --create-home appuser
 WORKDIR /app
