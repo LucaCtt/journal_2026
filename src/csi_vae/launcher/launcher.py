@@ -110,6 +110,7 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
                     trial_number=trial.number,
                     param_lr=lr,
                     queue_url=queue.url,
+                    aws_region=queue.region_name,
                 ),
             )
             logger.info("Submitted trial %d → Batch job %s", trial.number, job_id)
@@ -139,8 +140,8 @@ def run_launcher(settings: LauncherSettings | None = None) -> None:
     """Create Optuna study, submit Batch jobs, and wait for results."""
     settings = LauncherSettings() if settings is None else settings
 
-    submitter = TrialSubmitter(settings.aws_job_queue, settings.aws_job_definition)
-    queue = MessagesQueue()
+    submitter = TrialSubmitter(settings.aws_job_queue, settings.aws_job_definition, settings.aws_region)
+    queue = MessagesQueue(settings.aws_region)
     queue.create(settings.study_name)
 
     try:

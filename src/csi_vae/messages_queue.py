@@ -14,15 +14,16 @@ class QueueNotCreatedError(RuntimeError):
 class MessagesQueue:
     """An implementation of MessagesQueue using AWS SQS."""
 
-    def __init__(self) -> None:
+    def __init__(self, region_name: str) -> None:
         """Initialize the SQS client and store the queue URL."""
-        self.__sqs = boto3.client("sqs")
+        self.__sqs = boto3.client("sqs", region_name=region_name)
+        self.__region_name = region_name
         self.__url: str | None = None
 
     @staticmethod
-    def from_url(url: str) -> "MessagesQueue":
+    def from_url(url: str, region_name: str) -> "MessagesQueue":
         """Create a MessagesQueue instance from an existing SQS queue URL."""
-        instance = MessagesQueue()
+        instance = MessagesQueue(region_name)
         instance.__url = url
         return instance
 
@@ -33,6 +34,11 @@ class MessagesQueue:
             raise QueueNotCreatedError
 
         return self.__url
+
+    @property
+    def region_name(self) -> str:
+        """Return the AWS region of the SQS client."""
+        return self.__region_name
 
     def create(self, name: str) -> None:
         """Create the SQS queue and store its URL."""

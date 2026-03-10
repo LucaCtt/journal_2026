@@ -188,7 +188,7 @@ def evaluate(
 def run_trial(settings: TrialSettings | None = None) -> None:
     """Run a single trial of training and evaluating the autoencoder and classifier."""
     settings = TrialSettings() if settings is None else settings
-    queue = MessagesQueue.from_url(settings.queue_url) if settings.queue_url else None
+    queue = MessagesQueue.from_url(settings.queue_url, settings.aws_region) if settings.queue_url else None
 
     logger.info("Starting trial #%d with params: %s", settings.trial_number, settings.model_dump())
     if queue:

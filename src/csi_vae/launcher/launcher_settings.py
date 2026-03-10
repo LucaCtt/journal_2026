@@ -18,6 +18,8 @@ class LauncherSettings(BaseSettings):
     """Name of the AWS Batch job queue to submit trials to."""
     aws_job_definition: str = "CSIVAEJobDefinition"
     """Name of the AWS Batch job definition to use."""
+    aws_region: str = "us-east-1"
+    """Default AWS region to use for Batch operations."""
 
     param_lr_min: float = 1e-4
     param_lr_max: float = 1e-2
