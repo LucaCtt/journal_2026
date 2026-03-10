@@ -10,6 +10,7 @@ from rich.logging import RichHandler
 
 from csi_vae.launcher.launcher_settings import LauncherSettings
 from csi_vae.messages_queue import MessagesQueue
+from csi_vae.trial.trial import TrialStatus
 from csi_vae.trial.trial_settings import TrialSettings
 from csi_vae.trial_submitter import TrialSubmitter
 
@@ -42,23 +43,28 @@ def _collect_results(
         time.sleep(poll_interval)
 
         # Check the queue for completed jobs
-        messages = queue.pop(max_messages=10)
+        messages = queue.pop()
         for msg in messages:
             # Reset the timer on each received message to allow for long-running trials
             start_time = time.time()
 
-            trial_id = msg.get("trial_id", None)
-            if trial_id is not None and trial_id in remaining_trials:
-                status = msg.get("status", None)
-                accuracy = msg.get("accuracy", None) if status == "SUCCEEDED" else None
+            trial_id = msg["trial_id"]
+            if trial_id in remaining_trials:
+                status = TrialStatus(msg["status"])
 
-                if status == "SUCCEEDED":
-                    logger.info("Trial %d completed successfully.", trial_id)
-                else:
-                    logger.info("Trial %d failed during execution.", trial_id)
-
-                results.append((trial_id, accuracy))
-                remaining_trials.remove(trial_id)
+                match status:
+                    case TrialStatus.STARTING:
+                        logger.info("Trial %d is starting...", trial_id)
+                    case TrialStatus.SUCCEEDED:
+                        logger.info("Trial %d completed successfully.", trial_id)
+                        results.append((trial_id, msg["accuracy"]))
+                        remaining_trials.remove(trial_id)
+                    case TrialStatus.FAILED:
+                        logger.info("Trial %d failed with error: %s", trial_id, msg.get("error", "Unknown error"))
+                        results.append((trial_id, None))
+                        remaining_trials.remove(trial_id)
+                    case _:
+                        logger.warning("Received unknown status '%s' for trial %d", status, trial_id)
 
     return results
 
@@ -80,16 +86,8 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
         trial.number for trial in study.trials if trial.state in [TrialState.WAITING, TrialState.RUNNING]
     ]
     if previous_trials:
-        logger.info(
-            "Found %d pending trials from previous run: %s, trying to collect results...",
-            len(previous_trials),
-            previous_trials,
-        )
-        results = _collect_results(
-            queue,
-            previous_trials,
-            30,
-        )
+        logger.info("Found %d pending trials: %s, trying to collect results...", len(previous_trials), previous_trials)
+        results = _collect_results(queue, previous_trials, 30)
         for trial_id, accuracy in results:
             study.tell(trial_id, values=TrialState.FAIL if accuracy is None else accuracy)
 
