@@ -18,7 +18,7 @@ def mock_batch():
 
 @pytest.fixture
 def submitter(mock_batch):
-    return TrialSubmitter(job_queue="test-queue", job_definition="test-def")
+    return TrialSubmitter(job_queue="test-queue", job_definition="test-def", region_name="us-east-1")
 
 
 @pytest.fixture
@@ -26,8 +26,8 @@ def settings():
     return TrialSettings(
         study_name="my-study",
         trial_number=3,
-        queue_type="sqs",
         queue_url="https://sqs.fake/queue",
+        aws_region="us-east-1",
         param_lr=1e-3,
     )
 

@@ -1,5 +1,5 @@
 import logging
-from enum import Enum
+from enum import StrEnum
 
 import torch
 from torch import nn, optim
@@ -17,12 +17,12 @@ DATA_DIR = "/tmp/mnist"  # noqa: S108
 logger = logging.getLogger(__name__)
 
 
-class TrialStatus(Enum):
+class MessageType(StrEnum):
     """Enumeration of possible trial statuses."""
 
     STARTING = "STARTING"
-    SUCCEEDED = "SUCCEEDED"
-    FAILED = "FAILED"
+    SUCCESS = "SUCCESS"
+    ERROR = "ERROR"
 
 
 class Autoencoder(nn.Module):
@@ -197,7 +197,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
                 "study_name": settings.study_name,
                 "trial_id": settings.trial_number,
                 "params": settings.model_dump(),
-                "status": TrialStatus.STARTING,
+                "status": MessageType.STARTING,
             },
         )
 
@@ -228,7 +228,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
                     "study_name": settings.study_name,
                     "trial_id": settings.trial_number,
                     "params": settings.model_dump(),
-                    "status": TrialStatus.FAILED,
+                    "status": MessageType.ERROR,
                     "error": str(e),
                 },
             )
@@ -242,7 +242,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
                 "trial_id": settings.trial_number,
                 "params": settings.model_dump(),
                 "accuracy": accuracy,
-                "status": TrialStatus.SUCCEEDED,
+                "status": MessageType.SUCCESS,
             },
         )
 

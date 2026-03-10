@@ -5,12 +5,11 @@ from pathlib import Path
 import optuna
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
-from optuna.trial import TrialState
 from rich.logging import RichHandler
 
 from csi_vae.launcher.launcher_settings import LauncherSettings
 from csi_vae.messages_queue import MessagesQueue
-from csi_vae.trial.trial import TrialStatus
+from csi_vae.trial.trial import MessageType
 from csi_vae.trial.trial_settings import TrialSettings
 from csi_vae.trial_submitter import TrialSubmitter
 
@@ -50,16 +49,16 @@ def _collect_results(
 
             trial_id = msg["trial_id"]
             if trial_id in remaining_trials:
-                status = TrialStatus(msg["status"])
+                status = MessageType(msg["status"])
 
                 match status:
-                    case TrialStatus.STARTING:
+                    case MessageType.STARTING:
                         logger.info("Trial %d is starting...", trial_id)
-                    case TrialStatus.SUCCEEDED:
+                    case MessageType.SUCCESS:
                         logger.info("Trial %d completed successfully.", trial_id)
                         results.append((trial_id, msg["accuracy"]))
                         remaining_trials.remove(trial_id)
-                    case TrialStatus.FAILED:
+                    case MessageType.ERROR:
                         logger.info("Trial %d failed with error: %s", trial_id, msg.get("error", "Unknown error"))
                         results.append((trial_id, None))
                         remaining_trials.remove(trial_id)
@@ -83,13 +82,19 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
     )
     # Get any pending trials if the study already exists (e.g. from a previously stopped run)
     previous_trials = [
-        trial.number for trial in study.trials if trial.state in [TrialState.WAITING, TrialState.RUNNING]
+        trial.number
+        for trial in study.trials
+        if trial.state in [optuna.trial.TrialState.WAITING, optuna.trial.TrialState.RUNNING]
     ]
     if previous_trials:
         logger.info("Found %d pending trials: %s, trying to collect results...", len(previous_trials), previous_trials)
         results = _collect_results(queue, previous_trials, 30)
         for trial_id, accuracy in results:
-            study.tell(trial_id, values=TrialState.FAIL if accuracy is None else accuracy)
+            study.tell(
+                trial_id,
+                values=accuracy,
+                state=optuna.trial.TrialState.FAIL if accuracy is None else optuna.trial.TrialState.COMPLETE,
+            )
 
     for i in range(settings.n_batches):
         logger.info("Starting batch %d/%d.", i + 1, settings.n_batches)
@@ -122,7 +127,11 @@ def run_study(submitter: TrialSubmitter, queue: MessagesQueue, settings: Launche
             settings.poll_interval,
         )
         for trial_id, accuracy in results:
-            study.tell(trial_id, values=accuracy if accuracy is not None else TrialState.FAIL)
+            study.tell(
+                trial_id,
+                values=accuracy,
+                state=optuna.trial.TrialState.FAIL if accuracy is None else optuna.trial.TrialState.COMPLETE,
+            )
 
     if not any(t.value is not None for t in study.trials):
         logger.warning("No successful trials were completed.")

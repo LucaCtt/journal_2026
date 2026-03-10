@@ -33,7 +33,7 @@ def mock_boto3(monkeypatch: pytest.MonkeyPatch) -> Generator[MagicMock]:
 def queue(mock_boto3: MagicMock) -> MessagesQueue:
     """Create a MessagesQueue with a mocked SQS client."""
     mock_boto3.create_queue.return_value = {"QueueUrl": "https://sqs.fake/queue"}
-    q = MessagesQueue()
+    q = MessagesQueue("us-east-1")
     q.create("test-queue")
     return q
 
@@ -41,7 +41,7 @@ def queue(mock_boto3: MagicMock) -> MessagesQueue:
 @pytest.fixture
 def fresh_queue(mock_boto3: MagicMock) -> MessagesQueue:
     """Provide a MessagesQueue instance that hasn't been created yet."""
-    return MessagesQueue()
+    return MessagesQueue("us-east-1")
 
 
 # ---------------------------------------------------------------------------
@@ -68,12 +68,12 @@ class TestQueueNotCreatedError:
 class TestFromUrl:
     def test_url_is_set(self):
 
-        q = MessagesQueue.from_url("https://sqs.fake/existing")
+        q = MessagesQueue.from_url("https://sqs.fake/existing", "us-east-1")
         assert q.url == "https://sqs.fake/existing"
 
     def test_returns_messages_queue_instance(self):
 
-        q = MessagesQueue.from_url("https://sqs.fake/existing")
+        q = MessagesQueue.from_url("https://sqs.fake/existing", "us-east-1")
         assert isinstance(q, MessagesQueue)
 
 
