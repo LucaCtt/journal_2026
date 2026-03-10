@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 import optuna
 import pytest
 
-from csi_vae.launcher.launcher import _collect_results, run_launcher, run_study
-from csi_vae.launcher.launcher_settings import LauncherSettings
+from csi_vae.launcher import _collect_results, run_launcher, run_study
+from csi_vae.settings import LauncherSettings
 from csi_vae.trial import MessageType
 
 # ---------------------------------------------------------------------------
@@ -74,12 +74,12 @@ class TestLauncherSettings:
 class TestCollectResults:
     def test_returns_accuracy_for_succeeded_trial(self, mock_queue):
         mock_queue.pop.return_value = [{"trial_id": 1, "status": MessageType.SUCCESS, "accuracy": 0.95}]
-        results = _collect_results(mock_queue, [1], poll_interval=0)
+        results = _collect_results(mock_queue, [1], poll_interval=0, timeout=1)
         assert results == [(1, 0.95)]
 
     def test_returns_none_accuracy_for_failed_trial(self, mock_queue):
         mock_queue.pop.return_value = [{"trial_id": 1, "status": MessageType.ERROR, "accuracy": 0.95}]
-        results = _collect_results(mock_queue, [1], poll_interval=0)
+        results = _collect_results(mock_queue, [1], poll_interval=0, timeout=1)
         assert results == [(1, None)]
 
     def test_collects_multiple_trials(self, mock_queue):
@@ -87,7 +87,7 @@ class TestCollectResults:
             [{"trial_id": 0, "status": MessageType.SUCCESS, "accuracy": 0.9}],
             [{"trial_id": 1, "status": MessageType.SUCCESS, "accuracy": 0.8}],
         ]
-        results = _collect_results(mock_queue, [0, 1], poll_interval=0)
+        results = _collect_results(mock_queue, [0, 1], poll_interval=0, timeout=1)
         assert sorted(results) == [(0, 0.9), (1, 0.8)]
 
     def test_ignores_unknown_trial_ids(self, mock_queue):
@@ -95,7 +95,7 @@ class TestCollectResults:
             [{"trial_id": 99, "status": MessageType.SUCCESS, "accuracy": 0.5}],
             [{"trial_id": 1, "status": MessageType.SUCCESS, "accuracy": 0.7}],
         ]
-        results = _collect_results(mock_queue, [1], poll_interval=0)
+        results = _collect_results(mock_queue, [1], poll_interval=0, timeout=1)
         assert results == [(1, 0.7)]
 
     def test_polls_until_all_complete(self, mock_queue):
@@ -105,7 +105,7 @@ class TestCollectResults:
             [{"trial_id": 0, "status": MessageType.SUCCESS, "accuracy": 0.6}],
             [{"trial_id": 1, "status": MessageType.SUCCESS, "accuracy": 0.7}],
         ]
-        results = _collect_results(mock_queue, [0, 1], poll_interval=0)
+        results = _collect_results(mock_queue, [0, 1], poll_interval=0, timeout=1)
         assert len(results) == 2
         assert mock_queue.pop.call_count == 3
 
@@ -136,7 +136,7 @@ class TestRunStudy:
         assert mock_submitter.submit.call_count == settings.n_trials
 
     def test_tells_study_accuracy_on_success(self, mock_submitter, mock_queue, settings, in_memory_study):
-        with patch("csi_vae.launcher.launcher.optuna.create_study", return_value=in_memory_study):
+        with patch("csi_vae.launcher.optuna.create_study", return_value=in_memory_study):
             mock_queue.pop.side_effect = [
                 [{"trial_id": t, "status": MessageType.SUCCESS, "accuracy": 0.75}] for t in range(settings.n_trials)
             ]
@@ -145,7 +145,7 @@ class TestRunStudy:
         assert all(t.value == 0.75 for t in in_memory_study.trials)
 
     def test_tells_study_fail_on_failed_trial(self, mock_submitter, mock_queue, settings, in_memory_study):
-        with patch("csi_vae.launcher.launcher.optuna.create_study", return_value=in_memory_study):
+        with patch("csi_vae.launcher.optuna.create_study", return_value=in_memory_study):
             mock_queue.pop.side_effect = [
                 [{"trial_id": t, "status": MessageType.ERROR}] for t in range(settings.n_trials)
             ]
@@ -154,7 +154,7 @@ class TestRunStudy:
         assert all(t.state == optuna.trial.TrialState.FAIL for t in in_memory_study.trials)
 
     def test_trial_settings_passed_to_submitter(self, mock_submitter, mock_queue, settings, in_memory_study):
-        with patch("csi_vae.launcher.launcher.optuna.create_study", return_value=in_memory_study):
+        with patch("csi_vae.launcher.optuna.create_study", return_value=in_memory_study):
             mock_queue.pop.side_effect = [
                 [{"trial_id": t, "status": MessageType.SUCCESS, "accuracy": 0.8}] for t in range(settings.n_trials)
             ]
@@ -181,9 +181,9 @@ class TestRunLauncher:
         mock_queue.url = "https://sqs.fake/q"
 
         with (
-            patch("csi_vae.launcher.launcher.TrialSubmitter", return_value=mock_submitter),
-            patch("csi_vae.launcher.launcher.MessagesQueue", return_value=mock_queue),
-            patch("csi_vae.launcher.launcher.run_study") as mock_run_study,
+            patch("csi_vae.launcher.TrialSubmitter", return_value=mock_submitter),
+            patch("csi_vae.launcher.MessagesQueue", return_value=mock_queue),
+            patch("csi_vae.launcher.run_study") as mock_run_study,
         ):
             yield mock_queue, mock_submitter, mock_run_study
 
@@ -208,9 +208,9 @@ class TestRunLauncher:
         mock_queue.url = "https://sqs.fake/q"
         mock_queue.region_name = settings.aws_region
         with (
-            patch("csi_vae.launcher.launcher.MessagesQueue", return_value=mock_queue),
-            patch("csi_vae.launcher.launcher.run_study"),
-            patch("csi_vae.launcher.launcher.TrialSubmitter") as mock_submitter_cls,
+            patch("csi_vae.launcher.MessagesQueue", return_value=mock_queue),
+            patch("csi_vae.launcher.run_study"),
+            patch("csi_vae.launcher.TrialSubmitter") as mock_submitter_cls,
         ):
             run_launcher(settings)
             mock_submitter_cls.assert_called_once_with(
