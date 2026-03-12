@@ -13,6 +13,3 @@ wheels/
 # Editor files
 .vscode/
 .idea/
-
-# Dataset
-dataset/
