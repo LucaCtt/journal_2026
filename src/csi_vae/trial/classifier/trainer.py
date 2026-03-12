@@ -32,19 +32,22 @@ class Trainer:
 
         self.__criterion = nn.CrossEntropyLoss()
         self.__optimizer = optim.Adam(self.__clf.parameters(), lr=1e-3)
+        self.__scaler = torch.GradScaler(device=self.__device.type)
 
     def __run_batch(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Run a single training batch."""
         self.__optimizer.zero_grad()
 
-        with torch.no_grad():
-            mu, logvar = self.__gaussian.encode(x)
+        with torch.autocast(device_type=self.__device.type, dtype=torch.bfloat16):
+            with torch.no_grad():
+                mu, logvar = self.__gaussian.encode(x)
 
-        logits = self.__clf(torch.cat([mu, logvar], dim=1))
-        loss = self.__criterion(logits, y)
+            logits = self.__clf(torch.cat([mu, logvar], dim=1))
+            loss = self.__criterion(logits, y)
 
-        loss.backward()
-        self.__optimizer.step()
+        self.__scaler.scale(loss).backward()
+        self.__scaler.step(self.__optimizer)
+        self.__scaler.update()
 
         with torch.no_grad():
             accuracy = (logits.argmax(dim=1) == y).float().mean()

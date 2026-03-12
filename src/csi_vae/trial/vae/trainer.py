@@ -10,8 +10,8 @@ class Trainer:
     def __init__(
         self,
         gaussian: vae.SingleAntenna,
-        parameters: vae.Parameters,
         dataloader: DataLoader,
+        lr: float,
         device: torch.device | None = None,
     ) -> None:
         """Initialize the Trainer.
@@ -19,15 +19,16 @@ class Trainer:
         Arguments:
             gaussian: VAE model to be trained.
             dataloader: DataLoader for training data.
-            parameters: Parameters for the VAE model.
+            lr: Learning rate for the optimizer.
             device: Device to train the model on.
 
         """
         self.__device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.__model = gaussian.to(self.__device)
+        self.__gaussian = gaussian.to(self.__device)
         self.__dataloader = dataloader
-        self.__optimizer = torch.optim.Adam(self.__model.parameters(), lr=parameters.lr)
+        self.__optimizer = torch.optim.Adam(self.__gaussian.parameters(), lr=lr)
+        self.__scaler = torch.GradScaler(device=self.__device.type)
 
     def __run_batch(
         self,
@@ -44,11 +45,14 @@ class Trainer:
         """
         self.__optimizer.zero_grad()
 
-        x_recon, mu, logvar = self.__model(x_true)
-        loss, recon_loss, kl_loss = vae.loss(x_recon, x_true, mu, logvar)
+        # Autocast for mixed precision training
+        with torch.autocast(device_type=self.__device.type, dtype=torch.bfloat16):
+            x_recon, mu, logvar = self.__gaussian(x_true)
+            loss, recon_loss, kl_loss = vae.loss(x_recon, x_true, mu, logvar)
 
-        loss.backward()
-        self.__optimizer.step()
+        self.__scaler.scale(loss).backward()
+        self.__scaler.step(self.__optimizer)
+        self.__scaler.update()
 
         return loss, recon_loss, kl_loss
 
@@ -90,7 +94,7 @@ class Trainer:
             and KL divergence loss over all epochs.
 
         """
-        self.__model.train()
+        self.__gaussian.train()
 
         total_metrics = torch.zeros(3, device=self.__device)
 
