@@ -24,7 +24,7 @@ def _init_seeds(seed: int) -> None:
     random.seed(seed)
 
 
-def _train_and_eval(settings: TrialSettings) -> float:
+def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
     """Train the autoencoder and classifier, then evaluate the accuracy on the test set."""
     torch.set_float32_matmul_precision("high")
 
@@ -36,6 +36,8 @@ def _train_and_eval(settings: TrialSettings) -> float:
     )
 
     gaussians = []
+    total_kl_loss = 0.0
+
     for antenna_select in range(settings.n_antennas):
         antenna_ds = AntennaDataset(train_ds, antenna_select)
         train_dl = DataLoader(antenna_ds, batch_size=settings.batch_size, shuffle=True)
@@ -44,7 +46,7 @@ def _train_and_eval(settings: TrialSettings) -> float:
         trainer = vae.Trainer(gaussian, train_dl, settings.lr, settings.collapse_threshold, settings.collapse_patience)
 
         try:
-            trainer.train(settings.n_epochs)
+            _, _, kl_loss = trainer.train(settings.n_epochs)
         except vae.PosteriorCollapseError:
             logger.exception(
                 {
@@ -57,6 +59,7 @@ def _train_and_eval(settings: TrialSettings) -> float:
             raise
 
         gaussians.append(gaussian)
+        total_kl_loss += kl_loss
 
     train_dl = DataLoader(train_ds, batch_size=settings.batch_size, shuffle=True)
     delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities)
@@ -66,7 +69,7 @@ def _train_and_eval(settings: TrialSettings) -> float:
     test_dl = DataLoader(test_ds, batch_size=settings.batch_size, shuffle=False)
     evaluator = Evaluator(delayed_fusion, test_dl)
 
-    return evaluator.evaluate()
+    return evaluator.evaluate(), total_kl_loss / settings.n_antennas
 
 
 def run_trial(settings: TrialSettings | None = None) -> None:
@@ -88,7 +91,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
     )
 
     try:
-        accuracy = _train_and_eval(settings)
+        accuracy, kl_loss = _train_and_eval(settings)
     except Exception:
         logger.exception(
             {
@@ -106,6 +109,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
             "trial_id": settings.trial_number,
             "settings": settings.model_dump(),
             "accuracy": accuracy,
+            "kl_loss": kl_loss,
             "status": MessageType.SUCCESS,
         },
     )
