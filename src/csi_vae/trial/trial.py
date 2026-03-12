@@ -41,8 +41,20 @@ def _train_and_eval(settings: TrialSettings) -> float:
         train_dl = DataLoader(antenna_ds, batch_size=settings.batch_size, shuffle=True)
 
         gaussian = vae.SingleAntenna(settings.window_size, settings.n_subcarriers, settings.latent_dim)
-        trainer = vae.Trainer(gaussian, train_dl, settings.lr)
-        trainer.train(settings.n_epochs)
+        trainer = vae.Trainer(gaussian, train_dl, settings.lr, settings.collapse_threshold, settings.collapse_patience)
+
+        try:
+            trainer.train(settings.n_epochs)
+        except vae.PosteriorCollapseError:
+            logger.exception(
+                {
+                    "study_name": settings.study_name,
+                    "trial_id": settings.trial_number,
+                    "settings": settings.model_dump(),
+                    "status": MessageType.COLLAPSE,
+                },
+            )
+            raise
 
         gaussians.append(gaussian)
 

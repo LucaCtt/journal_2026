@@ -9,6 +9,7 @@ class MessageType(StrEnum):
 
     STARTING = "STARTING"
     SUCCESS = "SUCCESS"
+    COLLAPSE = "COLLAPSE"
     ERROR = "ERROR"
 
 

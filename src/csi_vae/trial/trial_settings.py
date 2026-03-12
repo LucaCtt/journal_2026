@@ -26,6 +26,10 @@ class TrialSettings(BaseSettings):
     """Stride to use when segmenting the data (number of samples to skip between windows)."""
     n_epochs: int = 100
     """Number of epochs to train the autoencoder."""
+    collapse_threshold: float = 1e-3
+    """Threshold for KL divergence loss to detect posterior collapse."""
+    collapse_patience: int = 10
+    """Number of epochs to wait before raising a collapse error."""
 
     seed: int = 42
     """Random seed for reproducibility."""
