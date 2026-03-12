@@ -86,8 +86,6 @@ class Trainer:
 
         Arguments:
             epochs: Number of epochs to train.
-            max_epochs_zero_kl: Maximum number of consecutive epochs with near-zero KL divergence before pruning.
-            eps: Threshold to consider KL divergence as near-zero.
 
         Returns:
             Tuple containing average total loss, reconstruction loss,

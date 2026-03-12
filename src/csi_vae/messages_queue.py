@@ -1,6 +1,15 @@
 import json
+from enum import StrEnum
 
 import boto3
+
+
+class MessageType(StrEnum):
+    """Enumeration of possible trial statuses."""
+
+    STARTING = "STARTING"
+    SUCCESS = "SUCCESS"
+    ERROR = "ERROR"
 
 
 class QueueNotCreatedError(RuntimeError):
