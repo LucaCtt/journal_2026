@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 
 
@@ -8,7 +10,7 @@ class TrialSettings(BaseSettings):
     """Name of the study to which this trial belongs."""
     trial_number: int = 0
     """Unique identifier for the trial within the study."""
-    dataset_path: str = "dataset.h5"
+    dataset_path: Path = Path("dataset.h5")
     """Path to the dataset to be used for training and evaluation."""
     queue_url: str | None = None
     """URL of the SQS message queue. If set to None, the trial will not send results to a queue."""
@@ -45,10 +47,10 @@ class TrialSettings(BaseSettings):
     """Dimensionality of the latent space in the autoencoder."""
     conv_channels: int = 32
     """Number of channels in the convolutional layers of the autoencoder."""
-    conv_layers: list[list[int]] = [
-        [5, 8, 5, 8],
-        [5, 8, 5, 8],
-        [3, 4, 1, 1],
+    conv_layers: list[tuple[int, int, int, int]] = [
+        (5, 8, 5, 8),
+        (5, 8, 5, 8),
+        (3, 4, 1, 1),
     ]
     """Specification of convolutional layers: list of [kernel_h, kernel_w, stride_h, stride_w]."""
     n_fusion_layers: int = 2

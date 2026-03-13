@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as func
 from torch import nn
 
-ConvLayerSpec = list[list[int]]
+ConvLayerSpec = list[tuple[int, int, int, int]]
 """Specification for convolutional layers.
 
 Each entry: (kernel_h, kernel_w, stride_h, stride_w)
@@ -36,8 +36,7 @@ class _AntennaEncoder(nn.Module):
 
         layers: list[nn.Module] = []
         in_ch = 1
-        for layer_spec in conv_layers:
-            kh, kw, sh, sw = layer_spec[:4]
+        for kh, kw, sh, sw in conv_layers:
             layers.append(nn.Conv2d(in_ch, channels, kernel_size=(kh, kw), stride=(sh, sw)))
             layers.append(nn.GELU())
             in_ch = channels
@@ -61,7 +60,7 @@ class _AntennaEncoder(nn.Module):
             flat_dim: The total number of features when the feature map is flattened.
 
         """
-        x = torch.zeros(1, 1, self.__window_size, self.__n_subcarriers)
+        x = torch.zeros(1, 1, self.__window_size, self.__n_subcarriers, device=next(self.parameters()).device)
         x = self.__conv[:-1](x)
         latent_feat_shape = x.shape[1:]
         flat_dim = int(x.numel() // x.shape[0])
@@ -113,8 +112,7 @@ class _AntennaDecoder(nn.Module):
         deconv_layers: list[nn.Module] = []
         reversed_specs = list(reversed(conv_layers))
 
-        for i, layer_spec in enumerate(reversed_specs):
-            kh, kw, sh, sw = layer_spec[:4]
+        for i, (kh, kw, sh, sw) in enumerate(reversed_specs):
             out_ch = 1 if i == len(reversed_specs) - 1 else channels
             deconv_layers.append(nn.ConvTranspose2d(channels, out_ch, kernel_size=(kh, kw), stride=(sh, sw)))
             if i < len(reversed_specs) - 1:

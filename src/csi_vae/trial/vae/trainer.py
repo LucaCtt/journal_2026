@@ -141,10 +141,8 @@ class Trainer:
             and KL divergence loss over all epochs.
 
         """
-        total_metrics = torch.zeros(3, device=self.__device)
-        collapse_counter = 0
-        plateau_counter = 0
-        best_val_loss = float("inf")
+        metrics = torch.zeros(3, device=self.__device)
+        collapse_counter, plateau_counter, epochs_run, best_val_loss = 0, 0, 0, float("inf")
 
         annealer = KLAnnealer(epochs, kl_max=self.__kl_max)
 
@@ -174,10 +172,10 @@ class Trainer:
                     break
 
             # Distributed averaging of metrics
-            total_metrics[0] += epoch_loss
-            total_metrics[1] += epoch_recon_loss
-            total_metrics[2] += epoch_kl_loss
+            metrics[0] += epoch_loss
+            metrics[1] += epoch_recon_loss
+            metrics[2] += epoch_kl_loss
 
-        total_metrics /= epochs
+            epochs_run += 1
 
-        return tuple(total_metrics.tolist())
+        return tuple((metrics / epochs_run).tolist())

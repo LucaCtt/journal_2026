@@ -1,13 +1,12 @@
 import logging
+import os
 import random
-from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
 from csi_vae.messages_queue import MessagesQueue, MessageType
 from csi_vae.trial import dataset, fusion, vae
-from csi_vae.trial.dataset import AntennaDataset
 from csi_vae.trial.evaluator import Evaluator
 from csi_vae.trial.queue_handler import QueueHandler
 from csi_vae.trial.trial_settings import TrialSettings
@@ -16,22 +15,37 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 
+# Set PyTorch matmul precision to high for better performance on compatible hardware
+torch.set_float32_matmul_precision("high")
+
 
 def _init_seeds(seed: int) -> None:
     """Initialize random seeds for reproducibility."""
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    random.seed(seed)
 
 
 def _make_dataloader(ds: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
+    """Create a DataLoader with common settings.
+
+    Arguments:
+        ds: Dataset to load data from.
+        batch_size: Number of samples per batch.
+        shuffle: Whether to shuffle the data at the beginning of each epoch.
+
+    Returns:
+        A DataLoader instance for the given dataset and settings.
+
+    """
     return DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=4,
+        num_workers=torch.cuda.device_count() if torch.cuda.is_available() else 1 * 4,
         persistent_workers=True,
         pin_memory=True,
     )
@@ -39,10 +53,8 @@ def _make_dataloader(ds: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
 
 def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
     """Train the autoencoder and classifier, then evaluate the accuracy on the test set."""
-    torch.set_float32_matmul_precision("high")
-
-    train_ds, val_ds, test_ds = dataset.load(
-        dataset_path=Path(settings.dataset_path),
+    full_train_ds, full_val_ds, full_test_ds = dataset.load(
+        dataset_path=settings.dataset_path,
         window_size=settings.window_size,
         n_activities=settings.n_activities,
         stride=settings.stride,
@@ -51,12 +63,13 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
     gaussians = []
     total_kl_loss = 0.0
 
+    # Train a separate VAE for each antenna
     for antenna_select in range(settings.n_antennas):
-        antenna_train_ds = AntennaDataset(train_ds, antenna_select)
-        antenna_val_ds = AntennaDataset(val_ds, antenna_select)
+        antenna_train_ds = dataset.SingleAntenna(full_train_ds, antenna_select)
+        antenna_val_ds = dataset.SingleAntenna(full_val_ds, antenna_select)
 
-        train_dl = _make_dataloader(antenna_train_ds, settings.batch_size, shuffle=True)
-        val_dl = _make_dataloader(antenna_val_ds, settings.batch_size, shuffle=False)
+        antenna_train_dl = _make_dataloader(antenna_train_ds, settings.batch_size, shuffle=True)
+        antenna_val_dl = _make_dataloader(antenna_val_ds, settings.batch_size, shuffle=False)
 
         gaussian = vae.SingleAntenna(
             settings.window_size,
@@ -66,31 +79,33 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
             settings.conv_layers,
         )
         gaussian.compile(fullgraph=True)
+
         trainer = vae.Trainer(
             gaussian,
-            train_dl,
-            val_dl,
+            antenna_train_dl,
+            antenna_val_dl,
             settings.lr,
             settings.patience,
             settings.collapse_threshold,
             settings.plateau_min_delta,
             settings.kl_max,
         )
-
         _, _, kl_loss = trainer.train(settings.n_epochs)
 
         gaussians.append(gaussian)
         total_kl_loss += kl_loss
 
-    train_dl = _make_dataloader(train_ds, settings.batch_size, shuffle=True)
+    # Train the fusion model on the latent representations from all antennas
+    full_train_dl = _make_dataloader(full_train_ds, settings.batch_size, shuffle=True)
+
     delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities, settings.n_fusion_layers)
     delayed_fusion.compile(fullgraph=True)
-    trainer = fusion.Trainer(delayed_fusion, train_dl, settings.lr)
+
+    trainer = fusion.Trainer(delayed_fusion, full_train_dl, settings.lr)
     trainer.train(settings.n_epochs)
 
-    test_dl = _make_dataloader(test_ds, settings.batch_size, shuffle=False)
-    evaluator = Evaluator(delayed_fusion, test_dl)
-
+    full_test_dl = _make_dataloader(full_test_ds, settings.batch_size, shuffle=False)
+    evaluator = Evaluator(delayed_fusion, full_test_dl)
     return evaluator.evaluate(), total_kl_loss / settings.n_antennas
 
 

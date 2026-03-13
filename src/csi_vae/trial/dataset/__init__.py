@@ -1,5 +1,5 @@
-from csi_vae.trial.dataset.antenna_dataset import AntennaDataset
-from csi_vae.trial.dataset.csi_dataset import CSIDataset
 from csi_vae.trial.dataset.load import load
+from csi_vae.trial.dataset.multi_antenna import MultiAntenna
+from csi_vae.trial.dataset.single_antenna import SingleAntenna
 
-__all__ = ["AntennaDataset", "CSIDataset", "load"]
+__all__ = ["MultiAntenna", "SingleAntenna", "load"]

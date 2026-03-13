@@ -15,9 +15,9 @@ class KLAnnealer:
         ramp_fraction: float = 0.5,
     ) -> None:
         """Initialize the KL annealer."""
-        self.__weight = 0.0
-        self.__schedule = self._build_schedule(total_epochs, n_cycles, kl_max, ramp_fraction)
         self.__epoch = 0
+        self.__schedule = self._build_schedule(total_epochs, n_cycles, kl_max, ramp_fraction)
+        self.__weight = self.__schedule[0]
 
     @staticmethod
     def _build_schedule(

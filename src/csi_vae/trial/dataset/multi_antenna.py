@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class CSIDataset(Dataset):
+class MultiAntenna(Dataset):
     """CSI Dataset for PyTorch."""
 
     def __init__(

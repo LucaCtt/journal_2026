@@ -5,7 +5,7 @@ from typing import cast
 import h5py
 import numpy as np
 
-from csi_vae.trial.dataset.csi_dataset import CSIDataset
+from csi_vae.trial.dataset.multi_antenna import MultiAntenna
 
 
 def load(
@@ -13,7 +13,7 @@ def load(
     window_size: int,
     n_activities: int,
     stride: int,
-) -> tuple[CSIDataset, CSIDataset, CSIDataset]:
+) -> tuple[MultiAntenna, MultiAntenna, MultiAntenna]:
     """Load the CSI train/test datasets.
 
     Arguments:
@@ -42,8 +42,8 @@ def load(
             test_mats.append(np.array(test_group[activity_key]))
 
     # Shape of dataset samples: (n_antennas, window_size, n_subcarriers)
-    train_dataset = CSIDataset(csi_mats=train_mats, window_size=window_size, stride=stride)
-    val_dataset = CSIDataset(csi_mats=val_mats, window_size=window_size, stride=stride)
-    test_dataset = CSIDataset(csi_mats=test_mats, window_size=window_size, stride=stride)
+    train_dataset = MultiAntenna(csi_mats=train_mats, window_size=window_size, stride=stride)
+    val_dataset = MultiAntenna(csi_mats=val_mats, window_size=window_size, stride=stride)
+    test_dataset = MultiAntenna(csi_mats=test_mats, window_size=window_size, stride=stride)
 
     return train_dataset, val_dataset, test_dataset
