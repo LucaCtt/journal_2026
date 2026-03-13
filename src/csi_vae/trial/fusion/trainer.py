@@ -44,7 +44,7 @@ class Trainer:
         """
         self.__optimizer.zero_grad()
 
-        with torch.autocast(device_type=self.__device.type, dtype=torch.bfloat16):
+        with torch.autocast(device_type=self.__device.type, dtype=torch.float16):
             logits = self.__model(x)
             loss = self.__criterion(logits, y)
 

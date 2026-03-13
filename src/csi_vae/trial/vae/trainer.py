@@ -56,7 +56,7 @@ class Trainer:
         self.__optimizer.zero_grad()
 
         # Autocast for mixed precision training
-        with torch.autocast(device_type=self.__device.type, dtype=torch.bfloat16):
+        with torch.autocast(device_type=self.__device.type, dtype=torch.float16):
             x_recon, mu, logvar = self.__gaussian(x_true)
             loss, recon_loss, kl_loss = vae.loss(x_recon, x_true, mu, logvar)
 

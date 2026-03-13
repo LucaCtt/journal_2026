@@ -37,7 +37,7 @@ class Evaluator:
 
         for batch_x, batch_y in self.__dataloader:
             x, y = batch_x.to(self.__device), batch_y.to(self.__device)
-            with torch.autocast(device_type=self.__device.type, dtype=torch.bfloat16):
+            with torch.autocast(device_type=self.__device.type, dtype=torch.float16):
                 preds = self.__model(x).argmax(dim=1)
 
             correct += (preds == y).sum().item()
