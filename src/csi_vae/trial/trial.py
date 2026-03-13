@@ -17,7 +17,6 @@ logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 
 
-
 def _init_seeds(seed: int) -> None:
     """Initialize random seeds for reproducibility."""
     torch.manual_seed(seed)
@@ -60,7 +59,7 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
         val_dl = _make_dataloader(antenna_val_ds, settings.batch_size, shuffle=False)
 
         gaussian = vae.SingleAntenna(settings.window_size, settings.n_subcarriers, settings.latent_dim)
-        gaussian.compile()
+        gaussian.compile(fullgraph=True)
         trainer = vae.Trainer(
             gaussian,
             train_dl,
@@ -78,6 +77,7 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
 
     train_dl = _make_dataloader(train_ds, settings.batch_size, shuffle=True)
     delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities)
+    delayed_fusion.compile(fullgraph=True)
     trainer = fusion.Trainer(delayed_fusion, train_dl, settings.lr)
     trainer.train(settings.n_epochs)
 

@@ -31,11 +31,6 @@ class Delayed(nn.Module):
             Output tensor of shape (batch_size, n_activities).
 
         """
-        z = []
-
-        for i, antenna in enumerate(self.__antennas):
-            _, mu_i, logvar_i = antenna(x[:, i])
-            z.append(torch.cat((mu_i, logvar_i), dim=1))
-
-        z = torch.cat(z, dim=1)
+        outs = [torch.cat(antenna(x[:, i])[1:], dim=1) for i, antenna in enumerate(self.__antennas)]
+        z = torch.cat(outs, dim=1)
         return self.__fc(z)
