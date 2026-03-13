@@ -18,9 +18,7 @@ class Delayed(nn.Module):
         self.__fc = nn.Sequential(
             nn.Linear(latent_dim * 2 * len(antennas), 32),
             nn.GELU(),
-            nn.Linear(32, 16),
-            nn.GELU(),
-            nn.Linear(16, n_activities),
+            nn.Linear(32, n_activities),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -36,7 +34,7 @@ class Delayed(nn.Module):
         z = []
 
         for i, antenna in enumerate(self.__antennas):
-            mu_i, logvar_i = antenna(x[:i, :])
+            _, mu_i, logvar_i = antenna(x[:, i])
             z.append(torch.cat((mu_i, logvar_i), dim=1))
 
         z = torch.cat(z, dim=1)

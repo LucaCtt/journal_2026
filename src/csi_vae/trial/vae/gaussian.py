@@ -65,7 +65,7 @@ class _AntennaEncoder(nn.Module):
 
         """
         x = x.unsqueeze(1)  # Add channel dimension
-        z = self.__conv(x) # No nned to squeeze since the conv output is already flattened
+        z = self.__conv(x)  # No need to squeeze since the conv output is already flattened
         return self.__mu(z), self.__logvar(z)
 
 
@@ -112,8 +112,8 @@ class _AntennaDecoder(nn.Module):
 
         """
         z = func.gelu(self.__fc(z))
-        z = z.view(-1, *self.__latent_feat_shape)
-        return z.squeeze(1)  # Remove channel dimension
+        z = z.view(z.size(0), *self.__latent_feat_shape)
+        return self.__deconv(z).squeeze(1)  # Remove channel dimension
 
 
 class SingleAntenna(nn.Module):
@@ -157,7 +157,7 @@ class SingleAntenna(nn.Module):
         self,
         x: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Encode the input, sample a global categorical latent variable, and decode to reconstruct the input.
+        """Encode the input, sample a latent variable, and decode to reconstruct the input.
 
         Arguments:
             x: Input tensor of shape (batch_size, window_size, n_subcarriers).

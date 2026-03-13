@@ -22,10 +22,10 @@ def loss(
 
     """
     # Reconstruction loss
-    recon = func.mse_loss(x_recon, x_true, reduction="mean")
+    recon = func.mse_loss(x_recon, x_true, reduction="sum") / x_true.size(0)
 
     # KL divergence with standard normal prior
-    kl = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
 
     total_loss = recon + kl
 
