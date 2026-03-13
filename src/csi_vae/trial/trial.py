@@ -74,6 +74,7 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
             settings.patience,
             settings.collapse_threshold,
             settings.plateau_min_delta,
+            settings.kl_max,
         )
 
         _, _, kl_loss = trainer.train(settings.n_epochs)

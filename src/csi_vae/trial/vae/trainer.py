@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from csi_vae.trial import vae
+from csi_vae.trial.vae.kl_annealer import KLAnnealer
 
 
 class PosteriorCollapseError(Exception):
@@ -20,6 +21,7 @@ class Trainer:
         patience: int,
         collapse_threshold: float,
         plateau_min_delta: float,
+        kl_max: float,
         device: torch.device | None = None,
     ) -> None:
         """Initialize the Trainer.
@@ -32,6 +34,7 @@ class Trainer:
             patience: Number of epochs to wait before stopping training, both for early stopping and posterior collapse.
             collapse_threshold: Threshold for KL divergence loss to detect posterior collapse.
             plateau_min_delta: Minimum change in KL divergence loss to qualify as an improvement for early stopping.
+            kl_max: Maximum weight for the KL divergence loss.
             device: Device to train the model on.
 
         """
@@ -45,15 +48,18 @@ class Trainer:
         self.__patience = patience
         self.__collapse_threshold = collapse_threshold
         self.__plateau_min_delta = plateau_min_delta
+        self.__kl_max = kl_max
 
     def __run_batch(
         self,
         x_true: torch.Tensor,
+        kl_weight: float,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run a single training batch.
 
         Arguments:
             x_true: Ground truth input tensor.
+            kl_weight: Current weight for the KL divergence loss.
 
         Returns:
             Tuple containing total loss, reconstruction loss, KL divergence loss.
@@ -64,7 +70,7 @@ class Trainer:
         # Autocast for mixed precision training
         with torch.autocast(device_type=self.__device.type, dtype=torch.float16):
             x_recon, mu, logvar = self.__gaussian(x_true)
-            loss, recon_loss, kl_loss = vae.loss(x_recon, x_true, mu, logvar)
+            loss, recon_loss, kl_loss = vae.loss(x_recon, x_true, mu, logvar, kl_weight)
 
         self.__scaler.scale(loss).backward()
         self.__scaler.step(self.__optimizer)
@@ -72,8 +78,11 @@ class Trainer:
 
         return loss, recon_loss, kl_loss
 
-    def __run_epoch(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __run_epoch(self, kl_weight: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run a single training epoch.
+
+        Arguments:
+            kl_weight: Current weight for the KL divergence loss.
 
         Returns:
             Tuple containing average total loss, reconstruction loss, KL divergence loss.
@@ -83,7 +92,7 @@ class Trainer:
         metrics = torch.zeros(3, device=self.__device)
 
         for x_true, _ in self.__train_dl:
-            loss, recon_loss, kl_loss = self.__run_batch(x_true.to(self.__device))
+            loss, recon_loss, kl_loss = self.__run_batch(x_true.to(self.__device), kl_weight)
 
             metrics[0] += loss.detach()
             metrics[1] += recon_loss.detach()
@@ -95,8 +104,11 @@ class Trainer:
         return metrics[0], metrics[1], metrics[2]
 
     @torch.no_grad()
-    def __run_val_epoch(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __run_val_epoch(self, kl_weight: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run a single validation epoch.
+
+        Arguments:
+            kl_weight: Current weight for the KL divergence loss.
 
         Returns:
             Tuple containing average total loss, reconstruction loss, KL divergence loss.
@@ -108,7 +120,7 @@ class Trainer:
         for x_true, _ in self.__val_dl:
             with torch.autocast(device_type=self.__device.type, dtype=torch.bfloat16):
                 x_recon, mu, logvar = self.__gaussian(x_true.to(self.__device))
-                loss, recon_loss, kl_loss = vae.loss(x_recon, x_true.to(self.__device), mu, logvar)
+                loss, recon_loss, kl_loss = vae.loss(x_recon, x_true.to(self.__device), mu, logvar, kl_weight)
 
             metrics[0] += loss.detach()
             metrics[1] += recon_loss.detach()
@@ -134,11 +146,15 @@ class Trainer:
         plateau_counter = 0
         best_val_loss = float("inf")
 
-        for _ in range(epochs):
-            epoch_loss, epoch_recon_loss, epoch_kl_loss = self.__run_epoch()
+        annealer = KLAnnealer(epochs, kl_max=self.__kl_max)
 
-            val_loss, _, _ = self.__run_val_epoch()
-            if epoch_kl_loss < self.__collapse_threshold:
+        for _ in range(epochs):
+            epoch_loss, epoch_recon_loss, epoch_kl_loss = self.__run_epoch(annealer.weight)
+            val_loss, _, _ = self.__run_val_epoch(annealer.weight)
+
+            annealer.step()
+
+            if annealer.weight >= 1.0 and epoch_kl_loss < self.__collapse_threshold:
                 collapse_counter += 1
                 if collapse_counter >= self.__patience:
                     msg = (

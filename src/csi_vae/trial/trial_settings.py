@@ -39,6 +39,8 @@ class TrialSettings(BaseSettings):
     """Batch size for training the autoencoder."""
     lr: float = 2e-3
     """Learning rate for training the autoencoder."""
+    kl_max: float = 2
+    """Maximum weight for the KL divergence term during annealing."""
     latent_dim: int = 2
     """Dimensionality of the latent space in the autoencoder."""
     conv_channels: int = 32
