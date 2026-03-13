@@ -58,7 +58,13 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
         train_dl = _make_dataloader(antenna_train_ds, settings.batch_size, shuffle=True)
         val_dl = _make_dataloader(antenna_val_ds, settings.batch_size, shuffle=False)
 
-        gaussian = vae.SingleAntenna(settings.window_size, settings.n_subcarriers, settings.latent_dim)
+        gaussian = vae.SingleAntenna(
+            settings.window_size,
+            settings.n_subcarriers,
+            settings.latent_dim,
+            settings.conv_channels,
+            settings.conv_layers,
+        )
         gaussian.compile(fullgraph=True)
         trainer = vae.Trainer(
             gaussian,
@@ -76,7 +82,7 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
         total_kl_loss += kl_loss
 
     train_dl = _make_dataloader(train_ds, settings.batch_size, shuffle=True)
-    delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities)
+    delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities, settings.n_fusion_layers)
     delayed_fusion.compile(fullgraph=True)
     trainer = fusion.Trainer(delayed_fusion, train_dl, settings.lr)
     trainer.train(settings.n_epochs)

@@ -2,33 +2,49 @@ import torch
 import torch.nn.functional as func
 from torch import nn
 
+ConvLayerSpec = list[list[int]]
+"""Specification for convolutional layers.
+
+Each entry: (kernel_h, kernel_w, stride_h, stride_w)
+"""
+
 
 class _AntennaEncoder(nn.Module):
     """Encode a single-antenna CSI window into mean and log-variance vectors."""
 
-    def __init__(self, window_size: int, n_subcarriers: int, latent_dim: int) -> None:
+    def __init__(
+        self,
+        window_size: int,
+        n_subcarriers: int,
+        latent_dim: int,
+        channels: int,
+        conv_layers: ConvLayerSpec,
+    ) -> None:
         """Initialize the AntennaEncoder with convolutional layers and linear heads.
 
         Arguments:
             window_size: The size of the time window for CSI input.
             n_subcarriers: The number of subcarriers in the CSI input.
             latent_dim: The dimensionality of the latent space.
+            channels: The number of channels in the convolutional layers.
+            conv_layers: A list of tuples specifying the convolutional layers (kernel size and stride).
 
         """
         super().__init__()
         self.__window_size = window_size
         self.__n_subcarriers = n_subcarriers
 
-        # Convolutional feature extractor over time-frequency input
-        self.__conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=(5, 8), stride=(5, 8)),
-            nn.GELU(),
-            nn.Conv2d(32, 32, kernel_size=(5, 8), stride=(5, 8)),
-            nn.GELU(),
-            nn.Conv2d(32, 32, kernel_size=(3, 4), stride=(1, 1)),
-            nn.GELU(),
-            nn.Flatten(),
-        )
+        layers: list[nn.Module] = []
+        in_ch = 1
+        for layer_spec in conv_layers:
+            kh, kw, sh, sw = layer_spec[:4]
+            layers.append(nn.Conv2d(in_ch, channels, kernel_size=(kh, kw), stride=(sh, sw)))
+            layers.append(nn.GELU())
+            in_ch = channels
+
+        layers.append(nn.Flatten())
+        self.__conv = nn.Sequential(*layers)
+
         # Infer flattened feature dimension for linear heads
         _, flat_dim = self.get_shapes()
 
@@ -47,9 +63,8 @@ class _AntennaEncoder(nn.Module):
         """
         x = torch.zeros(1, 1, self.__window_size, self.__n_subcarriers)
         x = self.__conv[:-1](x)
-
         latent_feat_shape = x.shape[1:]
-        flat_dim = int(torch.prod(torch.tensor(latent_feat_shape)).item())
+        flat_dim = int(x.numel() // x.shape[0])
 
         return latent_feat_shape, flat_dim
 
@@ -77,6 +92,8 @@ class _AntennaDecoder(nn.Module):
         latent_feat_shape: tuple,
         flat_dim: int,
         latent_dim: int,
+        channels: int,
+        conv_layers: ConvLayerSpec,
     ) -> None:
         """Initialize the AntennaDecoder with linear and deconvolutional layers.
 
@@ -84,21 +101,26 @@ class _AntennaDecoder(nn.Module):
             latent_feat_shape: The shape of the feature map before flattening in the encoder (Channels, H, W).
             flat_dim: The total number of features when the feature map is flattened.
             latent_dim: The dimensionality of the latent space.
+            channels: The number of channels in the convolutional layers.
+            conv_layers: A list of tuples specifying the convolutional layers (kernel size and stride)
 
         """
         super().__init__()
 
         self.__latent_feat_shape = latent_feat_shape
-
-        # Decoder group
         self.__fc = nn.Linear(latent_dim, flat_dim)
-        self.__deconv = nn.Sequential(
-            nn.ConvTranspose2d(32, 32, kernel_size=(3, 4), stride=(1, 1)),
-            nn.GELU(),
-            nn.ConvTranspose2d(32, 32, kernel_size=(5, 8), stride=(5, 8)),
-            nn.GELU(),
-            nn.ConvTranspose2d(32, 1, kernel_size=(5, 8), stride=(5, 8)),
-        )
+
+        deconv_layers: list[nn.Module] = []
+        reversed_specs = list(reversed(conv_layers))
+
+        for i, layer_spec in enumerate(reversed_specs):
+            kh, kw, sh, sw = layer_spec[:4]
+            out_ch = 1 if i == len(reversed_specs) - 1 else channels
+            deconv_layers.append(nn.ConvTranspose2d(channels, out_ch, kernel_size=(kh, kw), stride=(sh, sw)))
+            if i < len(reversed_specs) - 1:
+                deconv_layers.append(nn.GELU())
+
+        self.__deconv = nn.Sequential(*deconv_layers)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         """Decode the latent vector into a CSI window.
@@ -124,6 +146,8 @@ class SingleAntenna(nn.Module):
         window_size: int,
         n_subcarriers: int,
         latent_dim: int,
+        channels: int,
+        conv_layers: ConvLayerSpec,
     ) -> None:
         """Initialize the SingleAntennaVAE with an encoder and decoder for single-antenna CSI data.
 
@@ -131,13 +155,15 @@ class SingleAntenna(nn.Module):
             window_size: The size of the time window for CSI input.
             n_subcarriers: The number of subcarriers in the CSI input.
             latent_dim: The dimensionality of the latent space.
+            channels: The number of channels in the convolutional layers.
+            conv_layers: A list of tuples specifying the convolutional layers (kernel size and stride).
 
         """
         super().__init__()
 
-        self.__encoder = _AntennaEncoder(window_size, n_subcarriers, latent_dim)
+        self.__encoder = _AntennaEncoder(window_size, n_subcarriers, latent_dim, channels, conv_layers)
         latent_feat_shape, flat_dim = self.__encoder.get_shapes()
-        self.__decoder = _AntennaDecoder(latent_feat_shape, flat_dim, latent_dim)
+        self.__decoder = _AntennaDecoder(latent_feat_shape, flat_dim, latent_dim, channels, conv_layers)
 
     def __reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         """Reparameterization trick to sample from the Gaussian distribution defined by mu and logvar."""
