@@ -24,18 +24,20 @@ class TrialSettings(BaseSettings):
     """Number of antennas in the CSI data."""
     stride: int = 50
     """Stride to use when segmenting the data (number of samples to skip between windows)."""
-    n_epochs: int = 100
+    n_epochs: int = 150
     """Number of epochs to train the autoencoder."""
     collapse_threshold: float = 1e-3
     """Threshold for KL divergence loss to detect posterior collapse."""
-    collapse_patience: int = 10
-    """Number of epochs to wait before raising a collapse error."""
+    patience: int = 5
+    """Number of epochs to wait before raising a collapse error or early stop."""
+    plateau_min_delta: float = 1e-4
+    """Minimum change in validation loss to qualify as an improvement for early stopping."""
 
     seed: int = 42
     """Random seed for reproducibility."""
     batch_size: int = 128
     """Batch size for training the autoencoder."""
-    lr: float = 1e-4
+    lr: float = 2e-3
     """Learning rate for training the autoencoder."""
     latent_dim: int = 2
     """Dimensionality of the latent space in the autoencoder."""
