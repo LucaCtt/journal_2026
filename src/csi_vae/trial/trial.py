@@ -8,11 +8,10 @@ from torch.utils.data import DataLoader, Dataset
 from csi_vae.messages_queue import MessagesQueue, MessageType
 from csi_vae.trial import dataset, fusion, vae
 from csi_vae.trial.evaluator import Evaluator
-from csi_vae.trial.queue_handler import QueueHandler
+from csi_vae.trial.handlers import QueueHandler, StreamHandler
 from csi_vae.trial.trial_settings import TrialSettings
 
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 
 # Set PyTorch matmul precision to high for better performance on compatible hardware
@@ -114,6 +113,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
     settings = TrialSettings() if settings is None else settings
     _init_seeds(settings.seed)
 
+    logger.addHandler(StreamHandler(settings.study_name, settings.trial_number, settings.seed))
     if settings.queue_url:
         queue = MessagesQueue.from_url(settings.queue_url, settings.aws_region)
         logger.addHandler(QueueHandler(queue, settings.study_name, settings.trial_number, settings.seed))
