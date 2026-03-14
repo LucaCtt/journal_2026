@@ -22,11 +22,12 @@ def _timestamp_to_iso(timestamp: float) -> str:
 class StreamHandler(logging.StreamHandler):
     """Logging handler that outputs log records to the console."""
 
-    def __init__(self, study_name: str, trial_number: int, seed: int) -> None:
+    def __init__(self, study_name: str, latent_dim: int, trial_number: int, seed: int) -> None:
         """Initialize the StreamHandler."""
         super().__init__()
 
         self.__study_name = study_name
+        self.__latent_dim = latent_dim
         self.__trial_number = trial_number
         self.__seed = seed
 
@@ -42,6 +43,7 @@ class StreamHandler(logging.StreamHandler):
             **message,
             "date_time": _timestamp_to_iso(record.created),
             "study_name": self.__study_name,
+            "latent_dim": self.__latent_dim,
             "trial_number": self.__trial_number,
             "seed": self.__seed,
         }
@@ -62,11 +64,12 @@ class StreamHandler(logging.StreamHandler):
 class QueueHandler(logging.Handler):
     """Logging handler that sends log records to an AWS SQS queue."""
 
-    def __init__(self, queue: MessagesQueue, study_name: str, trial_number: int, seed: int) -> None:
+    def __init__(self, queue: MessagesQueue, study_name: str, latent_dim: int, trial_number: int, seed: int) -> None:
         """Initialize the QueueHandler with the specified MessagesQueue."""
         super().__init__()
         self.__queue = queue
         self.__study_name = study_name
+        self.__latent_dim = latent_dim
         self.__trial_number = trial_number
         self.__seed = seed
 
@@ -82,6 +85,7 @@ class QueueHandler(logging.Handler):
             **message,
             "date_time": _timestamp_to_iso(record.created),
             "study_name": self.__study_name,
+            "latent_dim": self.__latent_dim,
             "trial_number": self.__trial_number,
             "seed": self.__seed,
         }

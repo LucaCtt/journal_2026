@@ -1,16 +1,6 @@
 import json
-from enum import StrEnum
 
 import boto3
-
-
-class MessageType(StrEnum):
-    """Enumeration of possible trial statuses."""
-
-    STARTING = "STARTING"
-    SUCCESS = "SUCCESS"
-    COLLAPSE = "COLLAPSE"
-    ERROR = "ERROR"
 
 
 class QueueNotCreatedError(RuntimeError):
@@ -27,7 +17,6 @@ class MessagesQueue:
     def __init__(self, region_name: str) -> None:
         """Initialize the SQS client and store the queue URL."""
         self.__sqs = boto3.client("sqs", region_name=region_name)
-        self.__region_name = region_name
         self.__url: str | None = None
 
     @staticmethod
@@ -44,11 +33,6 @@ class MessagesQueue:
             raise QueueNotCreatedError
 
         return self.__url
-
-    @property
-    def region_name(self) -> str:
-        """Return the AWS region of the SQS client."""
-        return self.__region_name
 
     def create(self, name: str) -> None:
         """Create the SQS queue and store its URL."""

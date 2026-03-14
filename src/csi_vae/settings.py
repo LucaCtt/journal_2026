@@ -2,6 +2,8 @@ from typing import NamedTuple, TypeVar
 
 from pydantic_settings import BaseSettings
 
+from csi_vae.trial.vae import CONV_SPECS
+
 NumberT = TypeVar("NumberT", int, float)
 
 
@@ -23,17 +25,17 @@ class LauncherSettings(BaseSettings):
 
     study_name: str = "default"
     """Name of the Optuna study."""
-    journal_path: str | None = f"out/{study_name}/study.log"
+    journal_path: str | None = f"out/{study_name}/study.sqlite"
     """Path to the Optuna journal file for this study."""
     n_trials: int = 10
     """Total number of Optuna trials to run."""
     starter_seed: int = 42
     """Seed used for generating the trials' seeds"""
-    n_seeds_per_trial: int = 10
+    n_seeds_per_trial: int = 2
     """Number of different random seeds to run for each trial configuration."""
     max_pruned_seeds: int = 2
     """Maximum number of seed collapses before pruning the trial."""
-    min_accuracy_delta: float = 0.01
+    min_accuracy_delta: float = 0.02
     """Minimum improvement in best-trial accuracy required to continue to the next latent dim."""
     aws_job_queue: str = "CSIVAEJobQueue"
     """Name of the AWS Batch job queue to submit trials to."""
@@ -51,4 +53,4 @@ class LauncherSettings(BaseSettings):
     kl_max: ParamRange[float] = ParamRange(min=1.0, max=4.0)
     latent_dim: ParamRange[int] = ParamRange(min=1, max=10)
     conv_channels: ParamRange[int] = ParamRange(min=8, max=64)
-    conv_layers_spec: ParamCategorical[int] = ParamCategorical(values=[*range(4)])
+    conv_layers_spec: ParamCategorical[int] = ParamCategorical(values=[*range(len(CONV_SPECS))])

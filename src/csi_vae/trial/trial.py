@@ -1,11 +1,13 @@
 import logging
 import os
 import random
+from enum import StrEnum
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from csi_vae.messages_queue import MessagesQueue, MessageType
+from csi_vae.messages_queue import MessagesQueue
 from csi_vae.trial import dataset, fusion, vae
 from csi_vae.trial.evaluator import Evaluator
 from csi_vae.trial.handlers import QueueHandler, StreamHandler
@@ -18,7 +20,16 @@ logger.setLevel(logging.INFO)
 torch.set_float32_matmul_precision("high")
 
 
-def _init_seeds(seed: int) -> None:
+class MessageType(StrEnum):
+    """Enumeration of possible trial statuses."""
+
+    STARTING = "STARTING"
+    SUCCESS = "SUCCESS"
+    COLLAPSE = "COLLAPSE"
+    ERROR = "ERROR"
+
+
+def _init_rng(seed: int) -> None:
     """Initialize random seeds for reproducibility."""
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
@@ -53,7 +64,7 @@ def _make_dataloader(ds: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
 def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
     """Train the autoencoder and classifier, then evaluate the accuracy on the test set."""
     full_train_ds, full_val_ds, full_test_ds = dataset.load(
-        dataset_path=settings.dataset_path,
+        dataset_path=Path(settings.dataset_path),
         window_size=settings.window_size,
         n_activities=settings.n_activities,
         stride=settings.stride,
@@ -111,12 +122,14 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
 def run_trial(settings: TrialSettings | None = None) -> None:
     """Run a single trial of training and evaluating the autoencoder and classifier."""
     settings = TrialSettings() if settings is None else settings
-    _init_seeds(settings.seed)
+    _init_rng(settings.seed)
 
-    logger.addHandler(StreamHandler(settings.study_name, settings.trial_number, settings.seed))
+    logger.addHandler(StreamHandler(settings.study_name, settings.latent_dim, settings.trial_number, settings.seed))
     if settings.queue_url:
         queue = MessagesQueue.from_url(settings.queue_url, settings.aws_region)
-        logger.addHandler(QueueHandler(queue, settings.study_name, settings.trial_number, settings.seed))
+        logger.addHandler(
+            QueueHandler(queue, settings.study_name, settings.latent_dim, settings.trial_number, settings.seed),
+        )
 
     logger.info({"type": MessageType.STARTING})
 

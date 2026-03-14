@@ -3,11 +3,10 @@ import math
 import random
 import statistics
 import time
+import warnings
 from pathlib import Path
 
 import optuna
-from optuna.storages import JournalStorage
-from optuna.storages.journal import JournalFileBackend
 from optuna.terminator import (
     EMMREvaluator,
     Terminator,
@@ -23,13 +22,14 @@ from csi_vae.trial import MessageType, TrialSettings
 from csi_vae.trial_submitter import TrialSubmitter
 
 # Logging config
-handler = RichHandler(level=logging.DEBUG, show_path=False)
-logging.basicConfig(level=logging.DEBUG, handlers=[handler], format="%(message)s")
+handler = RichHandler(level=logging.INFO, show_path=False)
+logging.basicConfig(level=logging.INFO, handlers=[handler], format="%(message)s")
 logger = logging.getLogger("rich")
 
 # Route Optuna logs through app logger
 optuna.logging.enable_propagation()
 optuna.logging.disable_default_handler()
+warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
 
 
 def _generate_seeds(starter_seed: int, n_seeds: int) -> list[int]:
@@ -61,10 +61,19 @@ def _make_study(study_name: str, journal_path: str | None) -> optuna.Study:
     """
     if journal_path:
         Path(journal_path).parent.mkdir(parents=True, exist_ok=True)
+    else:
+        journal_path = ":memory:"
+
+    storage = optuna.storages.RDBStorage(
+        url=f"sqlite:///{journal_path}",
+        heartbeat_interval=60,
+        grace_period=120,
+        failed_trial_callback=optuna.storages.RetryFailedTrialCallback(max_retry=3),
+    )
 
     return optuna.create_study(
         study_name=study_name,
-        storage=JournalStorage(JournalFileBackend(journal_path)) if journal_path else None,
+        storage=storage,
         direction="maximize",
         load_if_exists=True,
     )
@@ -72,6 +81,7 @@ def _make_study(study_name: str, journal_path: str | None) -> optuna.Study:
 
 def _poll_results(
     queue: MessagesQueue,
+    latent_dim: int,
     seeds: list[int],
     trial_number: int,
     max_pruned_seeds: int,
@@ -82,6 +92,7 @@ def _poll_results(
 
     Arguments:
         queue: The MessagesQueue to poll for results.
+        latent_dim: The latent dimension for this trial (used to filter messages for this study).
         seeds: The list of seeds that were run for this trial (used to track which results are still pending).
         trial_number: The Optuna trial number (used to filter messages for this trial).
         max_pruned_seeds: The maximum number of seed collapses allowed before pruning the trial.
@@ -105,7 +116,7 @@ def _poll_results(
         messages = queue.pop(max_messages=len(seeds))
 
         for message in messages:
-            if message.get("trial_number") != trial_number:
+            if message.get("trial_number") != trial_number or message.get("latent_dim") != latent_dim:
                 continue
 
             msg_type = message.get("type")
@@ -169,7 +180,7 @@ def _run_trial(
 
     conv_layers_spec = trial.suggest_categorical("conv_layers_spec", settings.conv_layers_spec.values)
 
-    logger.info("[Trial %d] latent_dim=%d, lr=:%.2e, submitting %d jobs...", trial.number, latent_dim, lr, len(seeds))
+    logger.info("[Trial %d] submitting %d jobs...", trial.number, len(seeds))
 
     # Submit one job per seed
     for seed in seeds:
@@ -187,10 +198,11 @@ def _run_trial(
             conv_layers_spec=conv_layers_spec,
         )
         job_id = submitter.submit(trial_settings)
-        logger.debug("[Trial %d] Submitted job %s for seed=%d", trial.number, seed, job_id)
+        logger.debug("[Trial %d] Submitted job %s for seed=%d", trial.number, job_id, seed)
 
     results = _poll_results(
         queue,
+        latent_dim,
         seeds,
         trial.number,
         settings.max_pruned_seeds,
