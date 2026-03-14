@@ -3,21 +3,17 @@ import math
 import random
 import statistics
 import time
+import uuid
 import warnings
 from pathlib import Path
 
 import optuna
-from optuna.terminator import (
-    EMMREvaluator,
-    Terminator,
-    TerminatorCallback,
-    report_cross_validation_scores,
-)
+import optuna.terminator
 from optuna.trial import TrialState
 from rich.logging import RichHandler
 
+from csi_vae.launcher_settings import LauncherSettings
 from csi_vae.messages_queue import MessagesQueue
-from csi_vae.settings import LauncherSettings
 from csi_vae.trial import MessageType, TrialSettings
 from csi_vae.trial_submitter import TrialSubmitter
 
@@ -26,8 +22,7 @@ handler = RichHandler(level=logging.INFO, show_path=False)
 logging.basicConfig(level=logging.INFO, handlers=[handler], format="%(message)s")
 logger = logging.getLogger("rich")
 
-# Route Optuna logs through app logger
-optuna.logging.enable_propagation()
+# Disable Optuna warnings
 optuna.logging.disable_default_handler()
 warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
 
@@ -87,7 +82,7 @@ def _poll_results(
     max_pruned_seeds: int,
     poll_timeout: float,
     poll_interval: float,
-) -> list[tuple[float, float]]:
+) -> list[float]:
     """Poll the messages queue for results from the given trial until all seeds have reported or too many collapses.
 
     Arguments:
@@ -100,55 +95,66 @@ def _poll_results(
         poll_interval: The number of seconds to wait between polling attempts.
 
     Returns:
-        A list of (accuracy, kl_loss) tuples for each successful seed.
+        A list of accuracy values for each successful seed.
 
     """
-    results: list[tuple[float, float]] = []
+    results: list[float] = []
     collapses = 0
-    deadline = time.monotonic() + poll_timeout
+    start = time.monotonic()
 
     while len(results) + collapses < len(seeds):
-        if time.monotonic() > deadline:
-            logger.warning("[Trial %d] Timed out waiting for results.", trial_number)
+        time.sleep(poll_interval)
+
+        if time.monotonic() - start > poll_timeout:
             msg = "Timed out waiting for seed results."
             raise TimeoutError(msg)
 
         messages = queue.pop(max_messages=len(seeds))
 
         for message in messages:
-            if message.get("trial_number") != trial_number or message.get("latent_dim") != latent_dim:
+            if message["trial_number"] != trial_number or message["latent_dim"] != latent_dim:
                 continue
 
-            msg_type = message.get("type")
-            seed = message.get("seed")
+            start = time.monotonic()  # reset timeout timer upon receiving a relevant message
+            seed = message["seed"]
+            message_type = message["type"]
 
-            if msg_type == MessageType.SUCCESS:
-                logger.debug(
-                    "[Trial %d] seed=%d succeeded: accuracy=%.4f, kl_loss=%.4f",
+            if message_type == MessageType.STARTING:
+                logger.debug("[L=%d][T=%d][S=%d] Job started.", latent_dim, trial_number, seed)
+
+            elif message_type == MessageType.SUCCESS:
+                logger.info(
+                    "[L=%d][T=%d][S=%d] Job succeeded with accuracy=%.4f.",
+                    latent_dim,
                     trial_number,
                     seed,
                     message["accuracy"],
-                    message["kl_loss"],
                 )
-                results.append((message["accuracy"], message["kl_loss"]))
+                results.append(message["accuracy"])
 
-            elif msg_type == MessageType.COLLAPSE:
+            elif message_type == MessageType.COLLAPSE:
                 collapses += 1
-                logger.warning("[Trial %d] seed=%d collapsed (%d total).", trial_number, seed, collapses)
+                logger.warning(
+                    "[L=%d][T=%d][S=%d] Job collapsed (%d total).",
+                    latent_dim,
+                    trial_number,
+                    seed,
+                    collapses,
+                )
                 if collapses > max_pruned_seeds:
-                    logger.warning("[Trial %d] Too many collapses, pruning trial.", trial_number)
+                    logger.warning(
+                        "[L=%d][T=%d][S=%d] Too many collapses, trial pruned.",
+                        latent_dim,
+                        trial_number,
+                        seed,
+                    )
+
                     msg = f"More than {max_pruned_seeds} seeds collapsed (got {collapses})."
                     raise optuna.TrialPruned(msg)
 
-            elif msg_type == MessageType.ERROR:
+            elif message_type == MessageType.ERROR:
                 msg = f"Seed {seed} failed with error: {message.get('error', 'Unknown error')}"
                 raise RuntimeError(msg)
-
-            else:
-                logger.warning("[Trial %d] Unknown message type: %s", trial_number, msg_type)
-
-        if not messages:
-            time.sleep(poll_interval)
 
     return results
 
@@ -166,7 +172,7 @@ def _run_trial(
     lr = trial.suggest_float("lr", settings.lr.min, settings.lr.max, log=True)
 
     # kl_max: uniform float
-    kl_max = trial.suggest_float("kl_max", settings.kl_max.min, settings.kl_max.max)
+    kl_max = trial.suggest_float("kl_max", settings.kl_max.min, settings.kl_max.max, step=0.5)
 
     # batch_size: powers of 2 — sample exponent, then map back
     bs_exp_min = int(math.log2(settings.batch_size.min))
@@ -180,12 +186,10 @@ def _run_trial(
 
     conv_layers_spec = trial.suggest_categorical("conv_layers_spec", settings.conv_layers_spec.values)
 
-    logger.info("[Trial %d] submitting %d jobs...", trial.number, len(seeds))
-
     # Submit one job per seed
     for seed in seeds:
         trial_settings = TrialSettings(
-            study_name=settings.study_name,
+            study_name=settings.launch_name,
             trial_number=trial.number,
             queue_url=queue.url,
             aws_region=settings.aws_region,
@@ -198,7 +202,9 @@ def _run_trial(
             conv_layers_spec=conv_layers_spec,
         )
         job_id = submitter.submit(trial_settings)
-        logger.debug("[Trial %d] Submitted job %s for seed=%d", trial.number, job_id, seed)
+        logger.debug("[L=%d][T=%d][S=%d] Submitted job %s.", latent_dim, trial.number, seed, job_id)
+
+    logger.info("[L=%d][T=%d] Submitted %d jobs with params %s.", latent_dim, trial.number, len(seeds), trial.params)
 
     results = _poll_results(
         queue,
@@ -210,13 +216,20 @@ def _run_trial(
         settings.poll_interval,
     )
 
-    accuracies = [r[0] for r in results]
-    median_accuracy = statistics.median(accuracies)
-    median_kl = statistics.median(r[1] for r in results)
+    median_accuracy = statistics.median(results)
+    quantiles = statistics.quantiles(results, n=4)
+    trial.set_user_attr("accuracies", results)
+    trial.set_user_attr("accuracy_p25", float(quantiles[0]))
+    trial.set_user_attr("accuracy_p75", float(quantiles[2]))
 
-    report_cross_validation_scores(trial, accuracies)
+    optuna.terminator.report_cross_validation_scores(trial, results)
 
-    logger.info("[Trial %d] Done — median accuracy=%.4f, median kl_loss=%.4f", trial.number, median_accuracy, median_kl)
+    logger.info(
+        "[L=%d][T=%d] Trial finished with median accuracy=%.4f.",
+        latent_dim,
+        trial.number,
+        median_accuracy,
+    )
 
     return median_accuracy
 
@@ -229,31 +242,32 @@ def _run_study(
     queue: MessagesQueue,
 ) -> float:
     """Run all trials for a given latent_dim. Returns the best accuracy achieved."""
-    study_name = f"{settings.study_name}-l{latent_dim}"
-    study = _make_study(study_name, settings.journal_path)
+    study_name = str(uuid.uuid4())[:8]
+    study = _make_study(study_name, f"{settings.journal_dir}/l{latent_dim}.sqlite")
 
     already_done = len([t for t in study.trials if t.state == TrialState.COMPLETE])
     remaining = settings.n_trials - already_done
     if remaining <= 0:
-        logger.info("[latent_dim=%d] Study already complete, skipping.", latent_dim)
+        logger.info("[L=%d] Study already complete, skipping.", latent_dim)
         return study.best_value
 
-    logger.info("[latent_dim=%d] Starting study '%s' (%d trials remaining).", latent_dim, study_name, remaining)
+    logger.info("[L=%d] Starting study '%s' (%d trials remaining).", latent_dim, study_name, remaining)
 
     def objective(trial: optuna.Trial) -> float:
         return _run_trial(trial, latent_dim, seeds, settings, submitter, queue)
 
-    terminator = Terminator(EMMREvaluator())
-    study.optimize(objective, n_trials=remaining, callbacks=[TerminatorCallback(terminator)])
+    terminator = optuna.terminator.Terminator(optuna.terminator.EMMREvaluator())
+    callbacks = [optuna.terminator.TerminatorCallback(terminator)]
+    study.optimize(objective, n_trials=remaining, callbacks=callbacks)
 
     completed = [t for t in study.trials if t.state == TrialState.COMPLETE]
     if not completed:
-        logger.warning("[latent_dim=%d] No completed trials.", latent_dim)
+        logger.warning("[L=%d] No completed trials.", latent_dim)
         return 0.0
 
     best = study.best_trial
     logger.info(
-        "[latent_dim=%d] Best trial: #%d accuracy=%.4f, params=%s",
+        "[L=%d] Best trial is #%d with median accuracy=%.4f, params=%s.",
         latent_dim,
         best.number,
         best.value,
@@ -268,7 +282,7 @@ def run_launcher(settings: LauncherSettings | None = None) -> None:
 
     submitter = TrialSubmitter(settings.aws_job_queue, settings.aws_job_definition, settings.aws_region)
     queue = MessagesQueue(settings.aws_region)
-    queue.create(settings.study_name)
+    queue.create(settings.launch_name)
 
     seeds = _generate_seeds(settings.starter_seed, settings.n_seeds_per_trial)
     logger.info("Generated %d seeds from starter seed %d.", len(seeds), settings.starter_seed)
@@ -282,14 +296,14 @@ def run_launcher(settings: LauncherSettings | None = None) -> None:
             if previous_best_accuracy is not None:
                 delta = best_accuracy - previous_best_accuracy
                 logger.info(
-                    "[latent_dim=%d] Accuracy delta vs previous: %+.4f (threshold: %f)",
+                    "[L=%d] Accuracy delta vs previous: %+.4f (threshold: %f)",
                     latent_dim,
                     delta,
                     settings.min_accuracy_delta,
                 )
 
                 if delta < settings.min_accuracy_delta:
-                    logger.info("[latent_dim=%d] Accuracy did not improve sufficiently. Stopping search.", latent_dim)
+                    logger.info("[L=%d] Accuracy did not improve sufficiently. Stopping search.", latent_dim)
                     break
 
             previous_best_accuracy = best_accuracy

@@ -15,7 +15,7 @@ class TrialSubmitter:
     def submit(self, settings: TrialSettings) -> str:
         """Submit a job to AWS Batch with the given environment variables."""
         response = self.__batch_client.submit_job(
-            jobName=f"{settings.study_name}-trial-{settings.trial_number}",
+            jobName=f"s{settings.study_name}-t{settings.trial_number}",
             jobQueue=self.__job_queue,
             jobDefinition=self.__job_definition,
             containerOverrides={

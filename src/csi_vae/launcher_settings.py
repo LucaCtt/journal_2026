@@ -1,3 +1,4 @@
+import uuid
 from typing import NamedTuple, TypeVar
 
 from pydantic_settings import BaseSettings
@@ -23,11 +24,11 @@ class ParamCategorical[T](NamedTuple):
 class LauncherSettings(BaseSettings):
     """Application settings, loaded from environment variables or .env file."""
 
-    study_name: str = "default"
-    """Name of the Optuna study."""
-    journal_path: str | None = f"out/{study_name}/study.sqlite"
-    """Path to the Optuna journal file for this study."""
-    n_trials: int = 10
+    launch_name: str = str(uuid.uuid4())[:8]
+    """Name of this launch, used for naming the Optuna study and AWS Batch jobs."""
+    journal_dir: str | None = f"out/{launch_name}"
+    """Path to the Optuna journal dir for this study."""
+    n_trials: int = 1
     """Total number of Optuna trials to run."""
     starter_seed: int = 42
     """Seed used for generating the trials' seeds"""
@@ -35,7 +36,7 @@ class LauncherSettings(BaseSettings):
     """Number of different random seeds to run for each trial configuration."""
     max_pruned_seeds: int = 2
     """Maximum number of seed collapses before pruning the trial."""
-    min_accuracy_delta: float = 0.02
+    min_accuracy_delta: float = 0.01
     """Minimum improvement in best-trial accuracy required to continue to the next latent dim."""
     aws_job_queue: str = "CSIVAEJobQueue"
     """Name of the AWS Batch job queue to submit trials to."""
@@ -43,14 +44,14 @@ class LauncherSettings(BaseSettings):
     """Name of the AWS Batch job definition to use."""
     aws_region: str = "us-east-1"
     """Default AWS region to use for Batch operations."""
-    poll_interval: int = 30
+    poll_interval: int = 30  # 30 seconds
     """Seconds to wait between polling AWS Batch for job status."""
-    poll_timeout: int = 600
+    poll_timeout: int = 60 * 60  # 1 hour
     """Maximum seconds to wait for a batch of trials to complete before giving up."""
 
     batch_size: ParamRange[int] = ParamRange(min=64, max=256)
-    lr: ParamRange[float] = ParamRange(min=1e-4, max=1e-2)
+    lr: ParamRange[float] = ParamRange(min=1e-3, max=3e-2)
     kl_max: ParamRange[float] = ParamRange(min=1.0, max=4.0)
-    latent_dim: ParamRange[int] = ParamRange(min=1, max=10)
-    conv_channels: ParamRange[int] = ParamRange(min=8, max=64)
+    latent_dim: ParamRange[int] = ParamRange(min=1, max=3)
+    conv_channels: ParamRange[int] = ParamRange(min=16, max=64)
     conv_layers_spec: ParamCategorical[int] = ParamCategorical(values=[*range(len(CONV_SPECS))])
