@@ -28,21 +28,21 @@ class LauncherSettings(BaseSettings):
     """Name of this launch, used for naming the Optuna study and AWS Batch jobs."""
     journal_dir: str | None = f"out/{launch_name}"
     """Path to the Optuna journal dir for this study."""
-    n_trials: int = 1
+    n_trials: int = 3
     """Total number of Optuna trials to run."""
     starter_seed: int = 42
     """Seed used for generating the trials' seeds"""
-    n_seeds_per_trial: int = 2
+    n_seeds_per_trial: int = 3
     """Number of different random seeds to run for each trial configuration."""
     max_pruned_seeds: int = 2
     """Maximum number of seed collapses before pruning the trial."""
     min_accuracy_delta: float = 0.01
     """Minimum improvement in best-trial accuracy required to continue to the next latent dim."""
-    aws_job_queue: str = "CSIVAEJobQueue"
+    batch_job_queue: str = "CSIVAEJobQueue"
     """Name of the AWS Batch job queue to submit trials to."""
-    aws_job_definition: str = "CSIVAEJobDefinition"
+    batch_job_definition: str = "CSIVAEJobDefinition"
     """Name of the AWS Batch job definition to use."""
-    aws_region: str = "us-east-1"
+    region_name: str = "us-east-1"
     """Default AWS region to use for Batch operations."""
     poll_interval: int = 30  # 30 seconds
     """Seconds to wait between polling AWS Batch for job status."""

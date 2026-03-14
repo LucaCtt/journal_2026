@@ -12,8 +12,10 @@ class TrialSettings(BaseSettings):
     """Path to the dataset to be used for training and evaluation."""
     queue_url: str | None = None
     """URL of the SQS message queue. If set to None, the trial will not send results to a queue."""
-    aws_region: str = "us-east-1"
-    """AWS region, for configuring the SQS client when used."""
+    bucket_name: str | None = None
+    """Name of the S3 bucket where results will be stored. If set to None, results will not be uploaded to S3."""
+    region_name: str = "us-east-1"
+    """AWS region for configuring the S3 client when used."""
     window_size: int = 450
     """Size of the window to use when segmenting the data."""
     n_subcarriers: int = 256

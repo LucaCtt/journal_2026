@@ -12,10 +12,9 @@ import optuna.terminator
 from optuna.trial import TrialState
 from rich.logging import RichHandler
 
+from csi_vae.aws import MessagesQueue, TrialSubmitter
 from csi_vae.launcher_settings import LauncherSettings
-from csi_vae.messages_queue import MessagesQueue
 from csi_vae.trial import MessageType, TrialSettings
-from csi_vae.trial_submitter import TrialSubmitter
 
 # Logging config
 handler = RichHandler(level=logging.INFO, show_path=False)
@@ -192,7 +191,7 @@ def _run_trial(
             study_name=settings.launch_name,
             trial_number=trial.number,
             queue_url=queue.url,
-            aws_region=settings.aws_region,
+            region_name=settings.region_name,
             latent_dim=latent_dim,
             seed=seed,
             lr=lr,
@@ -280,8 +279,8 @@ def run_launcher(settings: LauncherSettings | None = None) -> None:
     """Run the launcher with the given settings (or defaults if None)."""
     settings = LauncherSettings() if settings is None else settings
 
-    submitter = TrialSubmitter(settings.aws_job_queue, settings.aws_job_definition, settings.aws_region)
-    queue = MessagesQueue(settings.aws_region)
+    submitter = TrialSubmitter(settings.batch_job_queue, settings.batch_job_definition, settings.region_name)
+    queue = MessagesQueue(settings.region_name)
     queue.create(settings.launch_name)
 
     seeds = _generate_seeds(settings.starter_seed, settings.n_seeds_per_trial)

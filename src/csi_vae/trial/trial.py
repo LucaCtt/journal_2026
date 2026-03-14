@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from csi_vae.messages_queue import MessagesQueue
+from csi_vae.aws import MessagesQueue, ModelSaver
 from csi_vae.trial import dataset, fusion, vae
 from csi_vae.trial.evaluator import Evaluator
 from csi_vae.trial.handlers import QueueHandler, StreamHandler
@@ -114,6 +114,10 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
     trainer = fusion.Trainer(delayed_fusion, full_train_dl, settings.lr)
     trainer.train(settings.n_epochs)
 
+    if settings.bucket_name:
+        saver = ModelSaver(settings.bucket_name, settings.region_name)
+        saver.save_model(delayed_fusion, f"{settings.study_name}/{settings.trial_number}/{settings.seed}.pt")
+
     full_test_dl = _make_dataloader(full_test_ds, settings.batch_size, shuffle=False)
     evaluator = Evaluator(delayed_fusion, full_test_dl)
     return evaluator.evaluate(), total_kl_loss / settings.n_antennas
@@ -126,7 +130,7 @@ def run_trial(settings: TrialSettings | None = None) -> None:
 
     logger.addHandler(StreamHandler(settings.study_name, settings.latent_dim, settings.trial_number, settings.seed))
     if settings.queue_url:
-        queue = MessagesQueue.from_url(settings.queue_url, settings.aws_region)
+        queue = MessagesQueue.from_url(settings.queue_url, settings.region_name)
         logger.addHandler(
             QueueHandler(queue, settings.study_name, settings.latent_dim, settings.trial_number, settings.seed),
         )

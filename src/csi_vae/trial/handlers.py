@@ -3,7 +3,7 @@ import traceback
 from datetime import datetime
 from typing import Any
 
-from csi_vae.messages_queue import MessagesQueue
+from csi_vae.aws import MessagesQueue
 
 
 def _timestamp_to_iso(timestamp: float) -> str:
