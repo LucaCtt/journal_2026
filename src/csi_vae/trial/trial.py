@@ -116,50 +116,20 @@ def run_trial(settings: TrialSettings | None = None) -> None:
 
     if settings.queue_url:
         queue = MessagesQueue.from_url(settings.queue_url, settings.aws_region)
-        logger.addHandler(QueueHandler(queue))
+        logger.addHandler(QueueHandler(queue, settings.study_name, settings.trial_number, settings.seed))
 
-    logger.info(
-        {
-            "study_name": settings.study_name,
-            "trial_id": settings.trial_number,
-            "settings": settings.model_dump(),
-            "status": MessageType.STARTING,
-        },
-    )
+    logger.info({"type": MessageType.STARTING})
 
     try:
         accuracy, kl_loss = _train_and_eval(settings)
     except vae.PosteriorCollapseError:
-        logger.exception(
-            {
-                "study_name": settings.study_name,
-                "trial_id": settings.trial_number,
-                "settings": settings.model_dump(),
-                "status": MessageType.COLLAPSE,
-            },
-        )
+        logger.exception({"type": MessageType.COLLAPSE})
         raise
     except Exception:
-        logger.exception(
-            {
-                "study_name": settings.study_name,
-                "trial_id": settings.trial_number,
-                "settings": settings.model_dump(),
-                "status": MessageType.ERROR,
-            },
-        )
+        logger.exception({"type": MessageType.ERROR})
         raise
 
-    logger.info(
-        {
-            "study_name": settings.study_name,
-            "trial_id": settings.trial_number,
-            "settings": settings.model_dump(),
-            "accuracy": accuracy,
-            "kl_loss": kl_loss,
-            "status": MessageType.SUCCESS,
-        },
-    )
+    logger.info({"type": MessageType.SUCCESS, "accuracy": accuracy, "kl_loss": kl_loss})
 
 
 if __name__ == "__main__":
