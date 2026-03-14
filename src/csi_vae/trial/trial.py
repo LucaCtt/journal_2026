@@ -55,7 +55,7 @@ def _make_dataloader(ds: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
         ds,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=torch.cuda.device_count() if torch.cuda.is_available() else 1 * 4,
+        num_workers=(torch.cuda.device_count() if torch.cuda.is_available() else 1) * 4,
         persistent_workers=True,
         pin_memory=True,
     )
@@ -107,11 +107,12 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
 
     # Train the fusion model on the latent representations from all antennas
     full_train_dl = _make_dataloader(full_train_ds, settings.batch_size, shuffle=True)
+    full_val_dl = _make_dataloader(full_val_ds, settings.batch_size, shuffle=False)
 
     delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities, settings.n_fusion_layers)
     delayed_fusion.compile(fullgraph=True)
 
-    trainer = fusion.Trainer(delayed_fusion, full_train_dl, settings.lr)
+    trainer = fusion.Trainer(delayed_fusion, full_train_dl, full_val_dl, settings.lr, settings.patience)
     trainer.train(settings.n_epochs)
 
     if settings.bucket_name:

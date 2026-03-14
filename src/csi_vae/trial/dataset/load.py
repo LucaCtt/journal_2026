@@ -7,6 +7,9 @@ import numpy as np
 
 from csi_vae.trial.dataset.multi_antenna import MultiAntenna
 
+_SPLITS = ("train", "val", "test")
+_MAX_ACTIVITIES = len(ascii_uppercase)  # 26
+
 
 def load(
     dataset_path: Path,
@@ -14,36 +17,45 @@ def load(
     n_activities: int,
     stride: int,
 ) -> tuple[MultiAntenna, MultiAntenna, MultiAntenna]:
-    """Load the CSI train/test datasets.
+    """Load the CSI train/val/test datasets from an HDF5 file.
 
     Arguments:
-        dataset_path: Path to the dataset directory.
+        dataset_path: Path to the HDF5 dataset file.
         window_size: Window size for CSI samples.
-        n_activities: Number of activities (files) to load from the dataset.
+        n_activities: Number of activities to load (max 26, keyed A--Z).
         stride: Stride of the sliding window.
 
     Returns:
-        A tuple containing the train, validation, and test datasets.
+        A tuple of (train, val, test) MultiAntenna datasets.
+
+    Raises:
+        ValueError: If n_activities is out of range.
+        KeyError: If expected groups or activity keys are missing from the file.
 
     """
-    train_mats = []
-    val_mats = []
-    test_mats = []
+    if not 1 <= n_activities <= _MAX_ACTIVITIES:
+        msg = f"n_activities must be between 1 and {_MAX_ACTIVITIES}, got {n_activities}"
+        raise ValueError(msg)
+
+    activity_keys = list(ascii_uppercase[:n_activities])
+    split_mats: dict[str, list[np.ndarray]] = {split: [] for split in _SPLITS}
+
     with h5py.File(dataset_path, "r") as f:
-        train_group = cast("h5py.Group", f["train"])
-        val_group = cast("h5py.Group", f["val"])
-        test_group = cast("h5py.Group", f["test"])
+        missing_splits = [s for s in _SPLITS if s not in f]
+        if missing_splits:
+            msg = f"HDF5 file is missing expected groups: {missing_splits}"
+            raise KeyError(msg)
 
-        for i in range(n_activities):
-            activity_key = ascii_uppercase[i]
+        for split in _SPLITS:
+            group = cast("h5py.Group", f[split])
+            missing_keys = [k for k in activity_keys if k not in group]
+            if missing_keys:
+                msg = f"Split '{split}' is missing activity keys: {missing_keys}"
+                raise KeyError(msg)
 
-            train_mats.append(np.array(train_group[activity_key]))
-            val_mats.append(np.array(val_group[activity_key]))
-            test_mats.append(np.array(test_group[activity_key]))
+            for key in activity_keys:
+                split_mats[split].append(np.array(group[key]))
 
-    # Shape of dataset samples: (n_antennas, window_size, n_subcarriers)
-    train_dataset = MultiAntenna(csi_mats=train_mats, window_size=window_size, stride=stride)
-    val_dataset = MultiAntenna(csi_mats=val_mats, window_size=window_size, stride=stride)
-    test_dataset = MultiAntenna(csi_mats=test_mats, window_size=window_size, stride=stride)
-
-    return train_dataset, val_dataset, test_dataset
+    return tuple(  # type: ignore[return-value]
+        MultiAntenna(csi_mats=split_mats[split], window_size=window_size, stride=stride) for split in _SPLITS
+    )

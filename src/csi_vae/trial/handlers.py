@@ -1,6 +1,7 @@
+import json
 import logging
 import traceback
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from csi_vae.aws import MessagesQueue
@@ -16,80 +17,63 @@ def _timestamp_to_iso(timestamp: float) -> str:
         An ISO 8601 formatted string representing the given timestamp.
 
     """
-    return datetime.fromtimestamp(timestamp, tz=datetime.now().astimezone().tzinfo).isoformat()
+    return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
 
 
-class StreamHandler(logging.StreamHandler):
-    """Logging handler that outputs log records to the console."""
+class _BaseTrialHandler(logging.Handler):
+    """Base handler that enriches log records with trial metadata."""
 
     def __init__(self, study_name: str, latent_dim: int, trial_number: int, seed: int) -> None:
-        """Initialize the StreamHandler."""
         super().__init__()
+        self._study_name = study_name
+        self._latent_dim = latent_dim
+        self._trial_number = trial_number
+        self._seed = seed
 
-        self.__study_name = study_name
-        self.__latent_dim = latent_dim
-        self.__trial_number = trial_number
-        self.__seed = seed
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Emit a log record by outputting it to the console."""
+    def _build_message(self, record: logging.LogRecord) -> dict[str, Any]:
         message: dict[str, Any] = record.msg if isinstance(record.msg, dict) else {"message": record.getMessage()}
-
         if record.exc_info:
             message["error"] = str(record.exc_info[1])
             message["traceback"] = traceback.format_exception(*record.exc_info)
-
-        message = {
+        return {
             **message,
             "date_time": _timestamp_to_iso(record.created),
-            "study_name": self.__study_name,
-            "latent_dim": self.__latent_dim,
-            "trial_number": self.__trial_number,
-            "seed": self.__seed,
+            "study_name": self._study_name,
+            "latent_dim": self._latent_dim,
+            "trial_number": self._trial_number,
+            "seed": self._seed,
         }
 
-        super().emit(
-            logging.LogRecord(
-                name=record.name,
-                level=record.levelno,
-                pathname=record.pathname,
-                lineno=record.lineno,
-                msg=message,
-                args=(),
-                exc_info=record.exc_info,
-            ),
+
+class StreamHandler(_BaseTrialHandler, logging.StreamHandler):
+    """Logging handler that outputs enriched log records to the console."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Emit a log record by printing it to the console."""
+        message = self._build_message(record)
+        clean_record = logging.LogRecord(
+            name=record.name,
+            level=record.levelno,
+            pathname=record.pathname,
+            lineno=record.lineno,
+            msg=json.dumps(message),
+            args=(),
+            exc_info=None,  # already captured in message dict
         )
+        logging.StreamHandler.emit(self, clean_record)
 
 
-class QueueHandler(logging.Handler):
-    """Logging handler that sends log records to an AWS SQS queue."""
+class QueueHandler(_BaseTrialHandler, logging.Handler):
+    """Logging handler that sends enriched log records to an AWS SQS queue."""
 
     def __init__(self, queue: MessagesQueue, study_name: str, latent_dim: int, trial_number: int, seed: int) -> None:
-        """Initialize the QueueHandler with the specified MessagesQueue."""
-        super().__init__()
+        """Initialize the QueueHandler with the given queue and trial metadata."""
+        super().__init__(study_name, latent_dim, trial_number, seed)
         self.__queue = queue
-        self.__study_name = study_name
-        self.__latent_dim = latent_dim
-        self.__trial_number = trial_number
-        self.__seed = seed
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Emit a log record by sending it to the SQS queue."""
-        message: dict[str, Any] = record.msg if isinstance(record.msg, dict) else {"message": record.getMessage()}
-
-        if record.exc_info:
-            message["error"] = str(record.exc_info[1])
-            message["traceback"] = traceback.format_exception(*record.exc_info)
-
-        message = {
-            **message,
-            "date_time": _timestamp_to_iso(record.created),
-            "study_name": self.__study_name,
-            "latent_dim": self.__latent_dim,
-            "trial_number": self.__trial_number,
-            "seed": self.__seed,
-        }
+        """Emit a log record by sending it to the configured AWS SQS queue."""
         try:
-            self.__queue.push(message)
+            self.__queue.push(self._build_message(record))
         except Exception:  # noqa: BLE001
-            self.handleError(record)  # Silently fails to avoid log loops
+            self.handleError(record)
