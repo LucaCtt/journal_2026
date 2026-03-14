@@ -167,6 +167,8 @@ def _run_trial(
     cc_mult_max = settings.conv_channels.max // 8
     conv_channels = 8 * trial.suggest_int("conv_channels_mult", cc_mult_min, cc_mult_max)
 
+    conv_layers_spec = trial.suggest_categorical("conv_layers_spec", settings.conv_layers_spec.values)
+
     logger.info("[Trial %d] latent_dim=%d, lr=:%.2e, submitting %d jobs...", trial.number, latent_dim, lr, len(seeds))
 
     # Submit one job per seed
@@ -182,6 +184,7 @@ def _run_trial(
             kl_max=kl_max,
             batch_size=batch_size,
             conv_channels=conv_channels,
+            conv_layers_spec=conv_layers_spec,
         )
         job_id = submitter.submit(trial_settings)
         logger.debug("[Trial %d] Submitted job %s for seed=%d", trial.number, seed, job_id)

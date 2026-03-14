@@ -12,7 +12,7 @@ class ParamRange[NumberT](NamedTuple):
     max: NumberT
 
 
-class ParamList[T](NamedTuple):
+class ParamCategorical[T](NamedTuple):
     """Defines a hyperparameter with a name and a list of values."""
 
     values: list[T]
@@ -51,3 +51,4 @@ class LauncherSettings(BaseSettings):
     kl_max: ParamRange[float] = ParamRange(min=1.0, max=4.0)
     latent_dim: ParamRange[int] = ParamRange(min=1, max=10)
     conv_channels: ParamRange[int] = ParamRange(min=8, max=64)
+    conv_layers_spec: ParamCategorical[int] = ParamCategorical(values=[*range(4)])

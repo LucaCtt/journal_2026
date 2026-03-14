@@ -8,6 +8,13 @@ ConvLayerSpec = list[tuple[int, int, int, int]]
 Each entry: (kernel_h, kernel_w, stride_h, stride_w)
 """
 
+CONV_SPECS: list[ConvLayerSpec] = [
+    [(5, 8, 5, 8), (5, 8, 5, 8), (3, 4, 1, 1)], # This is the one used in the original FUSION paper
+    [(5, 8, 5, 8), (3, 8, 3, 4)],
+    [(5, 8, 5, 8), (3, 4, 3, 4), (3, 4, 1, 1)],
+    [(5, 8, 5, 8), (5, 8, 5, 8), (3, 4, 1, 1), (3, 1, 1, 1)],
+]
+
 
 class _AntennaEncoder(nn.Module):
     """Encode a single-antenna CSI window into mean and log-variance vectors."""

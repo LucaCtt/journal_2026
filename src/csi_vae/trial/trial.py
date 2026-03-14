@@ -75,7 +75,7 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
             settings.n_subcarriers,
             settings.latent_dim,
             settings.conv_channels,
-            settings.conv_layers,
+            vae.CONV_SPECS[settings.conv_layers_spec],
         )
         gaussian.compile(fullgraph=True)
 

@@ -47,11 +47,7 @@ class TrialSettings(BaseSettings):
     """Dimensionality of the latent space in the autoencoder."""
     conv_channels: int = 32
     """Number of channels in the convolutional layers of the autoencoder."""
-    conv_layers: list[tuple[int, int, int, int]] = [
-        (5, 8, 5, 8),
-        (5, 8, 5, 8),
-        (3, 4, 1, 1),
-    ]
-    """Specification of convolutional layers: list of [kernel_h, kernel_w, stride_h, stride_w]."""
+    conv_layers_spec: int = 0
+    """Index of the convolutional layers specification to use for the autoencoder."""
     n_fusion_layers: int = 2
     """Number of layers in the delayed fusion classifier."""
