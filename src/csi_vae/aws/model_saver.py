@@ -4,6 +4,8 @@ import boto3
 import torch
 from torch import nn
 
+from csi_vae.aws.retry import aws_retry
+
 
 class ModelSaver:
     """Class responsible for saving trial results, such as trained models, to S3."""
@@ -13,6 +15,7 @@ class ModelSaver:
         self.__bucket_name = bucket_name
         self.__s3 = boto3.client("s3", region_name=region_name)
 
+    @aws_retry
     def save_model(self, model: nn.Module, key: str) -> None:
         """Save the model to S3 with a filename that includes the study name, trial number, and seed."""
         buffer = io.BytesIO()

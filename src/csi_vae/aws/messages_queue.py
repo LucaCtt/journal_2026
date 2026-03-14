@@ -2,76 +2,103 @@ import json
 
 import boto3
 
+from csi_vae.aws.retry import aws_retry
+
 
 class QueueNotCreatedError(RuntimeError):
-    """Raised when trying to push to or pop from a queue that hasn't been created yet or is already destroyed."""
+    """Raised when operating on a queue that hasn't been created or is already destroyed."""
 
     def __init__(self) -> None:
         """Initialize the error with a default message."""
-        super().__init__("Queue not created yet or already destroyed. Call create() before using the queue.")
+        super().__init__("Queue not created. Call create() or use from_url() before operating.")
 
 
 class MessagesQueue:
-    """An implementation of MessagesQueue using AWS SQS."""
+    """AWS SQS-backed message queue with retry logic for transient errors."""
 
-    def __init__(self, region_name: str) -> None:
-        """Initialize the SQS client and store the queue URL."""
+    def __init__(self, region_name: str, url: str | None = None) -> None:
+        """Initialize the MessagesQueue.
+
+        Arguments:
+            region_name: AWS region for the SQS client.
+            url: Optional pre-existing queue URL. If provided, the queue is
+                immediately ready to use without calling create().
+
+        """
         self.__sqs = boto3.client("sqs", region_name=region_name)
-        self.__url: str | None = None
+        self.__url = url
 
     @staticmethod
     def from_url(url: str, region_name: str) -> "MessagesQueue":
-        """Create a MessagesQueue instance from an existing SQS queue URL."""
-        instance = MessagesQueue(region_name)
-        instance.__url = url
-        return instance
+        """Create a MessagesQueue from an existing SQS queue URL."""
+        return MessagesQueue(region_name, url=url)
 
     @property
     def url(self) -> str:
-        """Return the URL of the SQS queue, or raise an error if it hasn't been created."""
+        """The SQS queue URL. Raises QueueNotCreatedError if not yet created."""
         if self.__url is None:
             raise QueueNotCreatedError
-
         return self.__url
 
+    @aws_retry
     def create(self, name: str) -> None:
-        """Create the SQS queue and store its URL."""
+        """Create the SQS queue and store its URL.
+
+        Arguments:
+            name: Name of the SQS queue to create. Must be unique within the AWS account and region.
+
+        """
         self.__url = self.__sqs.create_queue(QueueName=name)["QueueUrl"]
 
+    @aws_retry
     def destroy(self) -> None:
-        """Delete the SQS queue."""
-        if self.__url is not None:
-            self.__sqs.delete_queue(QueueUrl=self.__url)
-            self.__url = None
+        """Delete the SQS queue. Raises QueueNotCreatedError if not yet created."""
+        self.__sqs.delete_queue(QueueUrl=self.url)
+        self.__url = None
 
+    @aws_retry
     def push(self, item: dict) -> None:
-        """Push a message to the SQS queue."""
-        if self.__url is None:
-            raise QueueNotCreatedError
+        """Push a message onto the queue.
 
-        self.__sqs.send_message(QueueUrl=self.__url, MessageBody=json.dumps(item))
+        Arguments:
+            item: The message body to send, which will be JSON-encoded before sending.
+
+        """
+        self.__sqs.send_message(QueueUrl=self.url, MessageBody=json.dumps(item))
 
     def pop(self, max_messages: int = 10) -> list[dict]:
-        """Pop messages from the SQS queue, or return an empty list if none are available."""
-        if self.__url is None:
-            raise QueueNotCreatedError
+        """Pop up to max_messages messages, deleting each only after it is read.
 
+        Arguments:
+            max_messages: Maximum number of messages to retrieve.
+
+        Returns:
+            List of decoded message bodies.
+
+        """
         results = []
         remaining = max_messages
 
-        # SQS caps at 10 per request, so we loop if more are requested
         while remaining > 0:
-            resp = self.__sqs.receive_message(
-                QueueUrl=self.__url,
-                MaxNumberOfMessages=min(remaining, 10),
-            ).get("Messages", [])
-            if not resp:
+            messages = self._receive(min(remaining, 10))
+            if not messages:
                 break
 
-            for msg in resp:
+            for msg in messages:
                 results.append(json.loads(msg["Body"]))
-                self.__sqs.delete_message(QueueUrl=self.__url, ReceiptHandle=msg["ReceiptHandle"])
+                self._delete(msg["ReceiptHandle"])
 
-            remaining -= len(resp)
+            remaining -= len(messages)
 
         return results
+
+    @aws_retry
+    def _receive(self, count: int) -> list[dict]:
+        return self.__sqs.receive_message(
+            QueueUrl=self.url,
+            MaxNumberOfMessages=count,
+        ).get("Messages", [])
+
+    @aws_retry
+    def _delete(self, receipt_handle: str) -> None:
+        self.__sqs.delete_message(QueueUrl=self.url, ReceiptHandle=receipt_handle)
