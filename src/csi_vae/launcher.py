@@ -184,6 +184,8 @@ def _run_trial(
 
     conv_layers_spec = trial.suggest_categorical("conv_layers_spec", settings.conv_layers_spec.values)
 
+    n_fusion_layers = trial.suggest_int("n_fusion_layers", settings.n_fusion_layers.min, settings.n_fusion_layers.max)
+
     # Submit one job per seed
     for seed in seeds:
         trial_settings = TrialSettings(
@@ -198,6 +200,7 @@ def _run_trial(
             batch_size=batch_size,
             conv_channels=conv_channels,
             conv_layers_spec=conv_layers_spec,
+            n_fusion_layers=n_fusion_layers,
         )
         job_id = submitter.submit(trial_settings)
         logger.debug("[L=%d][T=%d][S=%d] Submitted job %s.", latent_dim, trial.number, seed, job_id)

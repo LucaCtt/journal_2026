@@ -36,6 +36,10 @@ class EarlyStopping:
     @property
     def should_stop(self) -> bool:
         """Whether training should stop due to lack of improvement."""
+        if self.__best_weights is None:
+            # No improvement recorded yet, so don't stop
+            return False
+
         return self.__plateau_counter >= self.__patience
 
     def step_accuracy(self, val_accuracy: torch.Tensor, delta: float = 1e-6) -> None:

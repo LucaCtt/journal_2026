@@ -136,13 +136,13 @@ class Trainer:
             total_metrics[2] += epoch_kl_loss
             epochs_run += 1
 
-            self.__early_stopping.step_loss(val_loss)
-            if self.__early_stopping.should_stop:
-                break
-
             self.__collapse_detector.step(epoch_kl_loss)
             if annealer.weight >= 1.0 and self.__collapse_detector.is_collapsed():
                 raise PosteriorCollapseError
+
+            self.__early_stopping.step_loss(val_loss)
+            if self.__early_stopping.should_stop:
+                break
 
         self.__early_stopping.restore_best_weights()
 

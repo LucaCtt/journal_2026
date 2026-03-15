@@ -35,7 +35,7 @@ class LauncherSettings(BaseSettings):
     """Number of different random seeds to run for each trial configuration."""
     max_pruned_seeds: int = 2
     """Maximum number of seed collapses before pruning the trial."""
-    min_accuracy_delta: float = 0.01
+    min_accuracy_delta: float = 0.05
     """Minimum improvement in best-trial accuracy required to continue to the next latent dim."""
     batch_job_queue: str = "CSIVAEJobQueue"
     """Name of the AWS Batch job queue to submit trials to."""
@@ -54,3 +54,5 @@ class LauncherSettings(BaseSettings):
     latent_dim: ParamRange[int] = ParamRange(min=1, max=3)
     conv_channels: ParamRange[int] = ParamRange(min=16, max=64)
     conv_layers_spec: ParamCategorical[int] = ParamCategorical(values=[*range(len(CONV_SPECS))])
+    n_fusion_layers: ParamRange[int] = ParamRange(min=1, max=3)
+
