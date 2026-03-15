@@ -8,7 +8,6 @@ import numpy as np
 from csi_vae.trial.dataset.multi_antenna import MultiAntenna
 
 _SPLITS = ("train", "val", "test")
-_MAX_ACTIVITIES = len(ascii_uppercase)  # 26
 
 
 def load(
@@ -33,10 +32,6 @@ def load(
         KeyError: If expected groups or activity keys are missing from the file.
 
     """
-    if not 1 <= n_activities <= _MAX_ACTIVITIES:
-        msg = f"n_activities must be between 1 and {_MAX_ACTIVITIES}, got {n_activities}"
-        raise ValueError(msg)
-
     activity_keys = list(ascii_uppercase[:n_activities])
     split_mats: dict[str, list[np.ndarray]] = {split: [] for split in _SPLITS}
 

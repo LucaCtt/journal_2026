@@ -6,8 +6,19 @@ from csi_vae.trial.early_stopping import EarlyStopping
 from csi_vae.trial.vae.kl_annealer import KLAnnealer
 
 
+def _is_collapsed(kl_history: list[float], threshold: float) -> bool:
+    """Determine if the VAE has collapsed based on recent KL loss history."""
+    return all(kl < threshold for kl in kl_history) or all(
+        abs(kl_history[i] - kl_history[i - 1]) < threshold for i in range(1, len(kl_history))
+    )
+
+
 class PosteriorCollapseError(Exception):
     """Raised when the VAE posterior collapses during training."""
+
+    def __init__(self) -> None:
+        """Initialize the error with a default message."""
+        super().__init__("Posterior collapse detected.")
 
 
 class Trainer:
@@ -20,6 +31,7 @@ class Trainer:
         val_dl: DataLoader,
         lr: float,
         patience: int,
+        warmup_epochs: int,
         collapse_threshold: float,
         plateau_min_delta: float,
         kl_max: float,
@@ -33,6 +45,7 @@ class Trainer:
             val_dl: DataLoader for validation data.
             lr: Learning rate for the optimizer.
             patience: Patience for both early stopping and collapse detection.
+            warmup_epochs: Number of epochs to warm up the learning rate.
             collapse_threshold: KL loss below this triggers collapse detection.
             plateau_min_delta: Minimum improvement in val loss to reset early stopping.
             kl_max: Maximum KL divergence weight.
@@ -49,7 +62,7 @@ class Trainer:
         self.__plateau_min_delta = plateau_min_delta
         self.__kl_max = kl_max
         self.__patience = patience
-        self.__early_stopping = EarlyStopping(self.__gaussian, patience)
+        self.__early_stopping = EarlyStopping(self.__gaussian, patience, warmup_epochs)
 
     def __run_batch(self, x_true: torch.Tensor, kl_weight: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         self.__optimizer.zero_grad()
@@ -111,7 +124,7 @@ class Trainer:
 
         """
         total_metrics = torch.zeros(3, device=self.__device)
-        collapse_counter = 0
+        kl_history = []
         epochs_run = 0
         annealer = KLAnnealer(epochs, kl_max=self.__kl_max)
 
@@ -125,14 +138,11 @@ class Trainer:
             total_metrics[1] += epoch_recon_loss
             total_metrics[2] += epoch_kl_loss
             epochs_run += 1
+            kl_history.append(epoch_kl_loss)
+            kl_history = kl_history[-self.__patience :]
 
-            if annealer.weight >= 1.0 and epoch_kl_loss < self.__collapse_threshold:
-                collapse_counter += 1
-                if collapse_counter >= self.__patience:
-                    msg = f"Posterior collapse: KL loss {epoch_kl_loss:.6f} below threshold {self.__collapse_threshold}"
-                    raise PosteriorCollapseError(msg)
-            else:
-                collapse_counter = 0
+            if annealer.weight >= 1.0 and _is_collapsed(kl_history, self.__collapse_threshold):
+                raise PosteriorCollapseError
 
             self.__early_stopping.step_loss(val_loss, delta=self.__plateau_min_delta)
             if self.__early_stopping.should_stop:

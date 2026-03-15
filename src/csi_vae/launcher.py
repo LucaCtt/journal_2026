@@ -3,7 +3,6 @@ import math
 import random
 import statistics
 import time
-import uuid
 import warnings
 from pathlib import Path
 
@@ -241,10 +240,10 @@ def _run_study(
     queue: MessagesQueue,
 ) -> float:
     """Run all trials for a given latent_dim. Returns the best accuracy achieved."""
-    study_name = str(uuid.uuid4())[:8]
+    study_name = f"{settings.launch_name}_l{latent_dim}"
     study = _make_study(study_name, f"{settings.journal_dir}/l{latent_dim}.sqlite")
 
-    already_done = len([t for t in study.trials if t.state == TrialState.COMPLETE])
+    already_done = sum(1 for t in study.trials if t.state == TrialState.COMPLETE)
     remaining = settings.n_trials - already_done
     if remaining <= 0:
         logger.info("[L=%d] Study already complete, skipping.", latent_dim)

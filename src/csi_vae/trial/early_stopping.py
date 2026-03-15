@@ -3,8 +3,6 @@ import io
 import torch
 from torch import nn
 
-Metric = float | torch.Tensor
-
 
 class EarlyStopping:
     """Tracks a validation metric and saves/restores best model weights.
@@ -18,16 +16,18 @@ class EarlyStopping:
 
     """
 
-    def __init__(self, model: nn.Module, patience: int) -> None:
+    def __init__(self, model: nn.Module, patience: int, warmup_epochs: int) -> None:
         """Initialize the EarlyStopping instance.
 
         Arguments:
             model: Model whose weights are tracked.
             patience: Epochs without improvement before early stopping triggers.
+            warmup_epochs: Initial epochs to ignore before tracking improvements.
 
         """
         self.__model = model
         self.__patience = patience
+        self.__warmup_remaining = warmup_epochs
         self.__best_accuracy: torch.Tensor = torch.tensor(float("-inf"))
         self.__best_loss: torch.Tensor = torch.tensor(float("inf"))
         self.__plateau_counter = 0
@@ -38,20 +38,22 @@ class EarlyStopping:
         """Whether training should stop due to lack of improvement."""
         return self.__plateau_counter >= self.__patience
 
-    def step(self, val_accuracy: Metric) -> None:
+    def step_accuracy(self, val_accuracy: torch.Tensor) -> None:
         """Step using accuracy (higher is better).
 
         Arguments:
             val_accuracy: Validation accuracy from the most recent epoch.
 
         """
-        val_accuracy = torch.as_tensor(val_accuracy)
+        if self.__tick_warmup():
+            return
+
         improved = val_accuracy > self.__best_accuracy
         self.__update(improved)
         if improved:
             self.__best_accuracy = val_accuracy
 
-    def step_loss(self, val_loss: Metric, delta: float = 0.0) -> None:
+    def step_loss(self, val_loss: torch.Tensor, delta: float = 0.0) -> None:
         """Step using loss (lower is better).
 
         Arguments:
@@ -59,11 +61,21 @@ class EarlyStopping:
             delta: Minimum improvement required to reset the plateau counter.
 
         """
-        val_loss = torch.as_tensor(val_loss)
+        if self.__tick_warmup():
+            return
+
         improved = val_loss < self.__best_loss - delta
         self.__update(improved)
         if improved:
             self.__best_loss = val_loss
+
+    def __tick_warmup(self) -> bool:
+        """Decrement warmup counter. Returns True if still in warmup."""
+        if self.__warmup_remaining > 0:
+            self.__warmup_remaining -= 1
+            return True
+
+        return False
 
     def __update(self, improved: torch.Tensor) -> None:
         if improved:

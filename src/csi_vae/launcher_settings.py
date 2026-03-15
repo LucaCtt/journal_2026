@@ -1,4 +1,3 @@
-import uuid
 from typing import NamedTuple, TypeVar
 
 from pydantic_settings import BaseSettings
@@ -24,7 +23,7 @@ class ParamCategorical[T](NamedTuple):
 class LauncherSettings(BaseSettings):
     """Application settings, loaded from environment variables or .env file."""
 
-    launch_name: str = str(uuid.uuid4())[:8]
+    launch_name: str = "default"
     """Name of this launch, used for naming the Optuna study and AWS Batch jobs."""
     journal_dir: str | None = f"out/{launch_name}"
     """Path to the Optuna journal dir for this study."""

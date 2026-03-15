@@ -16,6 +16,7 @@ class Trainer:
         val_dl: DataLoader,
         lr: float,
         patience: int,
+        warmup_epochs: int,
         device: torch.device | None = None,
     ) -> None:
         """Initialize the Trainer with model, data loaders, optimizer, and early stopping.
@@ -26,6 +27,7 @@ class Trainer:
             val_dl: DataLoader for validation data.
             lr: Learning rate for the optimizer.
             patience: Early-stopping patience in epochs.
+            warmup_epochs: Number of epochs to warm up the learning rate.
             device: Target device; defaults to CUDA if available.
 
         """
@@ -36,7 +38,7 @@ class Trainer:
         self.__criterion = nn.CrossEntropyLoss()
         self.__optimizer = torch.optim.Adam(self.__model.parameters(), lr=lr)
         self.__scaler = torch.GradScaler(device=self.__device.type)
-        self.__early_stopping = EarlyStopping(self.__model, patience)
+        self.__early_stopping = EarlyStopping(self.__model, patience, warmup_epochs)
 
     def __run_batch(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         self.__optimizer.zero_grad()
@@ -108,7 +110,7 @@ class Trainer:
             total_metrics[1] += epoch_accuracy
             epochs_run += 1
 
-            self.__early_stopping.step(val_accuracy)
+            self.__early_stopping.step_accuracy(val_accuracy)
             if self.__early_stopping.should_stop:
                 break
 

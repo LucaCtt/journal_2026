@@ -96,6 +96,7 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
             antenna_val_dl,
             settings.lr,
             settings.patience,
+            settings.warmup_epochs,
             settings.collapse_threshold,
             settings.plateau_min_delta,
             settings.kl_max,
@@ -112,7 +113,14 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
     delayed_fusion = fusion.Delayed(gaussians, settings.latent_dim, settings.n_activities, settings.n_fusion_layers)
     delayed_fusion.compile(fullgraph=True)
 
-    trainer = fusion.Trainer(delayed_fusion, full_train_dl, full_val_dl, settings.lr, settings.patience)
+    trainer = fusion.Trainer(
+        delayed_fusion,
+        full_train_dl,
+        full_val_dl,
+        settings.lr,
+        settings.patience,
+        settings.warmup_epochs,
+    )
     trainer.train(settings.n_epochs)
 
     if settings.bucket_name:
