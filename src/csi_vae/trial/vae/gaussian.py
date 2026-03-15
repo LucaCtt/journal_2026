@@ -9,7 +9,7 @@ Each entry: (kernel_h, kernel_w, stride_h, stride_w)
 """
 
 CONV_SPECS: list[ConvLayerSpec] = [
-    [(5, 8, 5, 8), (5, 8, 5, 8), (3, 4, 1, 1)], # This is the one used in the original FUSION paper
+    [(5, 8, 5, 8), (5, 8, 5, 8), (3, 4, 1, 1)],  # This is the one used in the original FUSION paper
     [(5, 8, 5, 8), (3, 8, 3, 4)],
     [(5, 8, 5, 8), (3, 4, 3, 4), (3, 4, 1, 1)],
     [(5, 8, 5, 8), (5, 8, 5, 8), (3, 4, 1, 1), (3, 1, 1, 1)],
@@ -87,7 +87,7 @@ class _AntennaEncoder(nn.Module):
         """
         x = x.unsqueeze(1)  # Add channel dimension
         z = self.__conv(x)  # No need to squeeze since the conv output is already flattened
-        return self.__mu(z), self.__logvar(z)
+        return self.__mu(z), torch.clamp(self.__logvar(z), min=-10, max=10)
 
 
 class _AntennaDecoder(nn.Module):
