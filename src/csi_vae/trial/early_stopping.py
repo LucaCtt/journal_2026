@@ -38,22 +38,24 @@ class EarlyStopping:
         """Whether training should stop due to lack of improvement."""
         return self.__plateau_counter >= self.__patience
 
-    def step_accuracy(self, val_accuracy: torch.Tensor) -> None:
+    def step_accuracy(self, val_accuracy: torch.Tensor, delta: float = 1e-6) -> None:
         """Step using accuracy (higher is better).
 
         Arguments:
             val_accuracy: Validation accuracy from the most recent epoch.
+            delta: Minimum improvement required to reset the plateau counter.
+
 
         """
         if self.__tick_warmup():
             return
 
-        improved = val_accuracy > self.__best_accuracy
+        improved = val_accuracy > self.__best_accuracy + delta
         self.__update(improved)
         if improved:
             self.__best_accuracy = val_accuracy
 
-    def step_loss(self, val_loss: torch.Tensor, delta: float = 0.0) -> None:
+    def step_loss(self, val_loss: torch.Tensor, delta: float = 1e-6) -> None:
         """Step using loss (lower is better).
 
         Arguments:

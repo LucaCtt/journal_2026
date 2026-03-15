@@ -4,7 +4,7 @@ class KLAnnealer:
     Each cycle linearly ramps the weight from 0 to kl_max over ramp_epochs,
     then holds at kl_max for the remaining epochs in the cycle.
 
-    Implements 10.18653/v1/N19-1021
+    Implements https://aclanthology.org/N19-1021/
     """
 
     def __init__(
@@ -14,7 +14,15 @@ class KLAnnealer:
         kl_max: float = 4.0,
         ramp_fraction: float = 0.5,
     ) -> None:
-        """Initialize the KL annealer."""
+        """Initialize the KL annealer.
+
+        Arguments:
+            total_epochs: Total number of epochs for the entire training run.
+            n_cycles: Number of cycles to divide the epochs into.
+            kl_max: Maximum KL weight to reach at the end of each ramp.
+            ramp_fraction: Fraction of each cycle spent ramping up the KL weight (between 0 and 1).
+
+        """
         self.__epoch = 0
         self.__schedule = self._build_schedule(total_epochs, n_cycles, kl_max, ramp_fraction)
         self.__weight = self.__schedule[0]

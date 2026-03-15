@@ -27,11 +27,11 @@ class LauncherSettings(BaseSettings):
     """Name of this launch, used for naming the Optuna study and AWS Batch jobs."""
     journal_dir: str | None = f"out/{launch_name}"
     """Path to the Optuna journal dir for this study."""
-    n_trials: int = 3
+    n_trials: int = 10
     """Total number of Optuna trials to run."""
     starter_seed: int = 42
     """Seed used for generating the trials' seeds"""
-    n_seeds_per_trial: int = 3
+    n_seeds_per_trial: int = 5
     """Number of different random seeds to run for each trial configuration."""
     max_pruned_seeds: int = 2
     """Maximum number of seed collapses before pruning the trial."""

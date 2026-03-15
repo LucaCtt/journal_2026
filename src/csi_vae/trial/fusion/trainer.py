@@ -1,9 +1,23 @@
+from dataclasses import dataclass
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
 from csi_vae.trial import fusion
 from csi_vae.trial.early_stopping import EarlyStopping
+
+
+@dataclass(frozen=True)
+class TrainerParams:
+    """Parameters for the DelayedFusion Trainer."""
+
+    lr: float
+    """Learning rate for the optimizer."""
+    patience: int
+    """Early-stopping patience in epochs."""
+    warmup_epochs: int
+    """Number of epochs to warm up the learning rate."""
 
 
 class Trainer:
@@ -14,9 +28,7 @@ class Trainer:
         model: fusion.Delayed,
         train_dl: DataLoader,
         val_dl: DataLoader,
-        lr: float,
-        patience: int,
-        warmup_epochs: int,
+        params: TrainerParams,
         device: torch.device | None = None,
     ) -> None:
         """Initialize the Trainer with model, data loaders, optimizer, and early stopping.
@@ -25,9 +37,7 @@ class Trainer:
             model: DelayedFusion model to train.
             train_dl: DataLoader for training data.
             val_dl: DataLoader for validation data.
-            lr: Learning rate for the optimizer.
-            patience: Early-stopping patience in epochs.
-            warmup_epochs: Number of epochs to warm up the learning rate.
+            params: Trainer parameters.
             device: Target device; defaults to CUDA if available.
 
         """
@@ -36,9 +46,9 @@ class Trainer:
         self.__train_dl = train_dl
         self.__val_dl = val_dl
         self.__criterion = nn.CrossEntropyLoss()
-        self.__optimizer = torch.optim.Adam(self.__model.parameters(), lr=lr)
+        self.__optimizer = torch.optim.Adam(self.__model.parameters(), lr=params.lr)
         self.__scaler = torch.GradScaler(device=self.__device.type)
-        self.__early_stopping = EarlyStopping(self.__model, patience, warmup_epochs)
+        self.__early_stopping = EarlyStopping(self.__model, params.patience, params.warmup_epochs)
 
     def __run_batch(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         self.__optimizer.zero_grad()
@@ -61,10 +71,10 @@ class Trainer:
         metrics = torch.zeros(2, device=self.__device)
 
         for x, y in self.__train_dl:
-            loss, acc = self.__run_batch(x.to(self.__device), y.to(self.__device))
+            loss, accuracy = self.__run_batch(x.to(self.__device), y.to(self.__device))
 
             metrics[0] += loss
-            metrics[1] += acc
+            metrics[1] += accuracy
 
         metrics /= len(self.__train_dl)
 
@@ -83,8 +93,9 @@ class Trainer:
                 logits = self.__model(x)
                 loss = self.__criterion(logits, y)
 
+            accuracy = (logits.argmax(dim=1) == y).float().mean()
             metrics[0] += loss.detach()
-            metrics[1] += (logits.argmax(dim=1) == y).float().mean().detach()
+            metrics[1] += accuracy.detach()
 
         metrics /= len(self.__val_dl)
         return metrics[0], metrics[1]
@@ -116,5 +127,5 @@ class Trainer:
 
         self.__early_stopping.restore_best_weights()
 
-        loss, acc = (total_metrics / epochs_run).tolist()
-        return loss, acc
+        total_metrics /= epochs_run
+        return total_metrics[0].item(), total_metrics[1].item()

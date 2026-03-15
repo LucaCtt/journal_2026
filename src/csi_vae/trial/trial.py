@@ -94,12 +94,12 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
             gaussian,
             antenna_train_dl,
             antenna_val_dl,
-            settings.lr,
-            settings.patience,
-            settings.warmup_epochs,
-            settings.collapse_threshold,
-            settings.plateau_min_delta,
-            settings.kl_max,
+            vae.TrainerParams(
+                settings.lr,
+                settings.patience,
+                settings.warmup_epochs,
+                settings.kl_max,
+            ),
         )
         _, _, kl_loss = trainer.train(settings.n_epochs)
 
@@ -117,9 +117,11 @@ def _train_and_eval(settings: TrialSettings) -> tuple[float, float]:
         delayed_fusion,
         full_train_dl,
         full_val_dl,
-        settings.lr,
-        settings.patience,
-        settings.warmup_epochs,
+        fusion.TrainerParams(
+            settings.lr,
+            settings.patience,
+            settings.warmup_epochs,
+        ),
     )
     trainer.train(settings.n_epochs)
 
